@@ -24,6 +24,7 @@ export function IndicatorPill({
 }: Props) {
   return (
     <div
+      onDoubleClick={onSettings}
       className={cn(
         "group/pill pointer-events-auto flex items-center gap-1.5 rounded bg-tv-panel/95 px-1.5 py-0.5 text-[11px] shadow-sm ring-1 ring-tv-border backdrop-blur",
         hidden && "opacity-50",

@@ -97,7 +97,7 @@ function snapToOHLC(
   time: number,
   candles: Candle[],
   priceToCoord: (p: number) => number | null,
-  thresholdPx = 10,
+  thresholdPx = 20,
 ): number {
   const c = candles.find((x) => Number(x.time) === time)
     ?? candles.reduce<Candle | null>((b, x) => !b || Math.abs(Number(x.time) - time) < Math.abs(Number(b.time) - time) ? x : b, null);
@@ -141,6 +141,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
   const tool = useChartStore((s) => s.tool);
+  const setTool = useChartStore((s) => s.setTool);
   const magnet = useChartStore((s) => s.magnet);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
@@ -157,12 +158,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
   addPriceLineRef.current = addPriceLine;
   const addFibDrawingRef = useRef(addFibDrawing);
   addFibDrawingRef.current = addFibDrawing;
+  const setToolRef = useRef(setTool);
+  setToolRef.current = setTool;
   const symbolRef = useRef(symbol);
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
   const magnetRef = useRef(magnet);
   magnetRef.current = magnet;
+  const settingCrosshairRef = useRef(false);
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -272,6 +276,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
 
       if (toolRef.current === "hline") {
         addPriceLineRef.current(price, symbolRef.current);
+        setToolRef.current("cursor");
         return;
       }
 
@@ -291,6 +296,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
             a: current.a,
             b: { time, price },
           });
+          setToolRef.current("cursor");
         } else {
           setMeasure({
             phase: "placing",
@@ -314,23 +320,31 @@ export function PriceChart({ symbol, timeframe }: Props) {
             lowPrice: low,
           });
           setFibSketch(INITIAL_FIB);
+          setToolRef.current("cursor");
         }
       }
     });
 
     // Crosshair handler
     chart.subscribeCrosshairMove((param) => {
-      if (
+      if (settingCrosshairRef.current) {
+        settingCrosshairRef.current = false;
+      } else if (
         param.point &&
         param.time &&
         candleSeriesRef.current
       ) {
         const rawPrice2 = candleSeriesRef.current.coordinateToPrice(param.point.y);
         if (rawPrice2 !== null && isFinite(rawPrice2)) {
-          let price: number = Number(rawPrice2);
+          const rawNum: number = Number(rawPrice2);
+          let price: number = rawNum;
           if (magnetRef.current) {
-            price = snapToOHLC(price, Number(param.time), candlesRef.current,
+            price = snapToOHLC(rawNum, Number(param.time), candlesRef.current,
               (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+            if (price !== rawNum && candleSeriesRef.current) {
+              settingCrosshairRef.current = true;
+              try { chart.setCrosshairPosition(price, param.time as UTCTimestamp, candleSeriesRef.current); } catch {}
+            }
           }
           if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
             const time = Number(param.time);

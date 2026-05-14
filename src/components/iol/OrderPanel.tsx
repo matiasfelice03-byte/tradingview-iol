@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useIolStore } from "@/lib/store/iol-store";
 import { useIolQuote } from "@/hooks/useIolQuote";
 import { placeIolBuyOrder, placeIolSellOrder } from "@/lib/iol/rest";
@@ -36,6 +37,7 @@ export function OrderPanel() {
   const [confirmSide, setConfirmSide] = useState<"comprar" | "vender">("comprar");
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Pre-fill price from live quote
   useEffect(() => {
@@ -85,8 +87,11 @@ export function OrderPanel() {
 
   return (
     <>
-      <div className="border-t border-tv-border bg-tv-panel px-4 py-3">
-        <div className="flex items-center justify-between mb-3">
+      <div className="border-t border-tv-border bg-tv-panel">
+        <button
+          onClick={() => setIsExpanded((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-tv-panel-hover transition-colors"
+        >
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-tv-text">{selectedSymbol}</span>
             {quote && (
@@ -94,19 +99,19 @@ export function OrderPanel() {
                 <span className="text-sm tabular-nums text-tv-text">
                   {fmtARS(quote.ultimoPrecio)}
                 </span>
-                <span
-                  className={`text-xs tabular-nums ${
-                    quote.variacion >= 0 ? "text-tv-green" : "text-tv-red"
-                  }`}
-                >
+                <span className={`text-xs tabular-nums ${quote.variacion >= 0 ? "text-tv-green" : "text-tv-red"}`}>
                   {formatPct(quote.variacion)}
                 </span>
               </>
             )}
           </div>
-          <span className="text-xs text-tv-text-muted">Operar en BYMA</span>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-tv-text-muted">Operar en BYMA</span>
+            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-tv-text-muted" /> : <ChevronUp className="h-3.5 w-3.5 text-tv-text-muted" />}
+          </div>
+        </button>
 
+        {isExpanded && <div className="px-4 pb-3">
         <Tabs defaultValue="comprar">
           <TabsList className="bg-tv-bg mb-3 h-8">
             <TabsTrigger value="comprar" className="text-xs data-[state=active]:bg-tv-green/20 data-[state=active]:text-tv-green">
@@ -207,6 +212,7 @@ export function OrderPanel() {
             </TabsContent>
           ))}
         </Tabs>
+        </div>}
       </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

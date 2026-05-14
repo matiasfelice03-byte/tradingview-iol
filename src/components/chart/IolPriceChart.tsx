@@ -61,7 +61,7 @@ function snapToOHLC(
   time: number,
   candles: IolCandle[],
   priceToCoord: (p: number) => number | null,
-  thresholdPx = 10,
+  thresholdPx = 20,
 ): number {
   const c = candles.find((x) => Number(x.time) === time)
     ?? candles.reduce<IolCandle | null>((b, x) => !b || Math.abs(Number(x.time) - time) < Math.abs(Number(b.time) - time) ? x : b, null);
@@ -110,6 +110,7 @@ export function IolPriceChart() {
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
   const tool = useChartStore((s) => s.tool);
+  const setTool = useChartStore((s) => s.setTool);
   const priceLines = useChartStore((s) => s.priceLines);
   const fibDrawings = useChartStore((s) => s.fibDrawings);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
@@ -142,6 +143,7 @@ export function IolPriceChart() {
   const magnet = useChartStore((s) => s.magnet);
   const magnetRef = useRef(magnet);
   magnetRef.current = magnet;
+  const settingCrosshairRef = useRef(false);
 
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -153,6 +155,8 @@ export function IolPriceChart() {
   selectedSymbolRef.current = selectedSymbol;
   const configRef = useRef(config);
   configRef.current = config;
+  const setToolRef = useRef(setTool);
+  setToolRef.current = setTool;
   const fibDrawingsRef = useRef(fibDrawings);
   fibDrawingsRef.current = fibDrawings;
   const priceLinesRef = useRef(priceLines);
@@ -273,6 +277,7 @@ export function IolPriceChart() {
 
       if (currentTool === "hline") {
         addPriceLineRef.current(price, selectedSymbolRef.current);
+        setToolRef.current("cursor");
         return;
       }
       if (currentTool === "measure") {
@@ -283,6 +288,7 @@ export function IolPriceChart() {
           setMeasure({ phase: "placing", a: { time, price }, b: { time, price } });
         } else {
           setMeasure({ phase: "done", a: cur.a, b: { time, price } });
+          setToolRef.current("cursor");
         }
         return;
       }
@@ -300,18 +306,26 @@ export function IolPriceChart() {
             lowPrice: low,
           });
           setFibSketch(INITIAL_FIB);
+          setToolRef.current("cursor");
         }
       }
     });
 
     chart.subscribeCrosshairMove((param) => {
-      if (param.point && param.time && candleSeriesRef.current) {
+      if (settingCrosshairRef.current) {
+        settingCrosshairRef.current = false;
+      } else if (param.point && param.time && candleSeriesRef.current) {
         const rawP = candleSeriesRef.current.coordinateToPrice(param.point.y);
         if (rawP !== null && isFinite(rawP)) {
-          let price: number = Number(rawP);
+          const rawNum: number = Number(rawP);
+          let price: number = rawNum;
           if (magnetRef.current) {
-            price = snapToOHLC(price, Number(param.time), candlesRef.current,
+            price = snapToOHLC(rawNum, Number(param.time), candlesRef.current,
               (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+            if (price !== rawNum && candleSeriesRef.current) {
+              settingCrosshairRef.current = true;
+              try { chart.setCrosshairPosition(price, param.time as UTCTimestamp, candleSeriesRef.current); } catch {}
+            }
           }
           if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
             setMeasure((prev) => prev.phase === "placing" ? { ...prev, b: { time: Number(param.time), price } } : prev);
