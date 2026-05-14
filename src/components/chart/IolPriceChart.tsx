@@ -568,8 +568,8 @@ export function IolPriceChart() {
         priceLineVisible: false, lastValueVisible: false,
       }, 0);
       updateEMAs();
-    } else if (!indicators.ema200 && ema200Ref.current) {
-      chartRef.current.removeSeries(ema200Ref.current);
+    } else if (!indicators.ema200 && ema200Ref.current && chartRef.current) {
+      try { chartRef.current.removeSeries(ema200Ref.current); } catch {}
       ema200Ref.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
