@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { BellPlus, X, Bell, BellOff, Trash2, ChevronDown } from "lucide-react";
 import { useExplorarStore, type PriceAlert } from "@/lib/store/explorar-store";
+import { iolAuth } from "@/lib/iol/auth";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -32,18 +33,34 @@ export function AlertsPanel({ symbol, market, currentPrice }: Props) {
     setPrice(currentPrice > 0 ? currentPrice.toString() : "");
   }, [symbol, currentPrice]);
 
-  function handleCreate() {
+  async function handleCreate() {
     const p = parseFloat(price);
     if (!p || p <= 0) return;
-    if (Notification.permission === "default") Notification.requestPermission();
-    addAlert({
-      symbol, market, direction: dir, targetPrice: p,
-      message: message || `${symbol} ${dir === "above" ? "superó" : "bajó de"} ${p}`,
-      active: true,
-      ...(withOrder && market === "argentina" ? {
-        action: { type: orderType, quantity: parseInt(quantity) || 1, orderType: "precioLimite", plazo }
-      } : {}),
-    });
+
+    const alertMessage = message || `${symbol} ${dir === "above" ? "superó" : "bajó de"} ${p}`;
+    const action = withOrder && market === "argentina"
+      ? { type: orderType, quantity: parseInt(quantity) || 1, orderType: "precioLimite" as const, plazo }
+      : undefined;
+
+    // Save to local store
+    addAlert({ symbol, market, direction: dir, targetPrice: p, message: alertMessage, active: true, ...(action ? { action } : {}) });
+
+    // Save to Supabase for server-side checking
+    try {
+      const creds = iolAuth.getCredentials();
+      await fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol, market, direction: dir, target_price: p,
+          message: alertMessage, active: true,
+          action: action ?? null,
+          iol_username: creds?.username ?? null,
+          iol_password: creds?.password ?? null,
+        }),
+      });
+    } catch { /* silent — local alert still works */ }
+
     setShowForm(false);
     setMessage("");
     setWithOrder(false);
