@@ -23,8 +23,22 @@ async function iolFetch(path: string, options: RequestInit = {}): Promise<Respon
     cache: "no-store",
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => res.status.toString());
-    throw new Error(`IOL ${res.status}: ${text}`);
+    let detail = "";
+    try {
+      const body = await res.text();
+      // Try to extract a readable message from IOL's JSON error
+      const json = JSON.parse(body);
+      detail = json?.message ?? json?.Message ?? json?.error ?? body;
+    } catch {
+      detail = res.statusText || "";
+    }
+    const hint =
+      res.status === 500
+        ? " (posibles causas: mercado cerrado, saldo insuficiente, o precio fuera de rango)"
+        : res.status === 401
+        ? " (sesión expirada — volvé a iniciar sesión)"
+        : "";
+    throw new Error(`IOL ${res.status}${detail ? ": " + detail : ""}${hint}`);
   }
   return res;
 }
