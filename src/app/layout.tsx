@@ -46,6 +46,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
+        <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>{for(const r of regs)r.unregister();})}` }} />
         <TooltipProvider delay={150}>{children}</TooltipProvider>
         <AlertChecker />
       </body>
