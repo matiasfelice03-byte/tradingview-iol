@@ -81,6 +81,7 @@ export function IolPriceChart() {
   const selectedSymbol = useIolStore((s) => s.selectedSymbol);
   const dateRange = useIolStore((s) => s.dateRange);
   const setDateRange = useIolStore((s) => s.setDateRange);
+  const iolTimeframe = useIolStore((s) => s.iolTimeframe);
 
   const indicators = useChartStore((s) => s.indicators);
   const hidden = useChartStore((s) => s.hidden);
@@ -149,7 +150,7 @@ export function IolPriceChart() {
   const fibSketchRef = useRef(fibSketch);
   fibSketchRef.current = fibSketch;
 
-  const { candles, loading, error } = useIolHistorical(selectedSymbol, dateRange);
+  const { candles, loading, error } = useIolHistorical(selectedSymbol, iolTimeframe);
   const { quote } = useIolQuote(selectedSymbol);
 
   function recomputePaneOffsets() {

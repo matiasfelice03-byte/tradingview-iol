@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { IolDateRange } from "@/lib/iol/rest";
+import type { IolTimeframe } from "@/lib/yahoo/rest";
 
 export type Market = "crypto" | "argentina";
 
@@ -31,6 +32,7 @@ interface IolState {
   selectedSymbol: string;
   watchlistArgentina: string[];
   dateRange: IolDateRange;
+  iolTimeframe: IolTimeframe;
 
   setMarket: (m: Market) => void;
   setLoggedIn: (v: boolean) => void;
@@ -38,6 +40,7 @@ interface IolState {
   addToArgentinaWatchlist: (s: string) => void;
   removeFromArgentinaWatchlist: (s: string) => void;
   setDateRange: (r: IolDateRange) => void;
+  setIolTimeframe: (t: IolTimeframe) => void;
 }
 
 export const useIolStore = create<IolState>()(
@@ -48,6 +51,7 @@ export const useIolStore = create<IolState>()(
       selectedSymbol: "GGAL",
       watchlistArgentina: DEFAULT_ARGENTINA_WATCHLIST,
       dateRange: "3M",
+      iolTimeframe: "1D",
 
       setMarket: (market) => set({ market }),
       setLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
@@ -63,6 +67,7 @@ export const useIolStore = create<IolState>()(
           watchlistArgentina: state.watchlistArgentina.filter((x) => x !== s),
         })),
       setDateRange: (dateRange) => set({ dateRange }),
+      setIolTimeframe: (iolTimeframe) => set({ iolTimeframe }),
     }),
     {
       name: "iol-store",
@@ -72,6 +77,7 @@ export const useIolStore = create<IolState>()(
         selectedSymbol: s.selectedSymbol,
         watchlistArgentina: s.watchlistArgentina,
         dateRange: s.dateRange,
+        iolTimeframe: s.iolTimeframe,
       }),
     },
   ),

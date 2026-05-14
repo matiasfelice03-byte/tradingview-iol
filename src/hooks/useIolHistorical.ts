@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { fetchYahooCandles } from "@/lib/yahoo/rest";
+import { fetchYahooCandles, type IolTimeframe } from "@/lib/yahoo/rest";
 import type { IolCandle } from "@/lib/iol/rest";
-import type { IolDateRange } from "@/lib/iol/rest";
 
 export function useIolHistorical(
   simbolo: string | null,
-  range: IolDateRange,
+  timeframe: IolTimeframe = "1D",
 ): {
   candles: IolCandle[];
   error: string | null;
@@ -21,8 +20,7 @@ export function useIolHistorical(
     setLoading(true);
     setError(null);
 
-    // Yahoo Finance uses ".BA" suffix for Argentine/BYMA stocks
-    fetchYahooCandles(simbolo + ".BA", range)
+    fetchYahooCandles(simbolo + ".BA", timeframe)
       .then((data) => {
         if (!cancelled) {
           setCandles(data);
@@ -39,7 +37,7 @@ export function useIolHistorical(
     return () => {
       cancelled = true;
     };
-  }, [simbolo, range]);
+  }, [simbolo, timeframe]);
 
   return { candles, error, loading };
 }

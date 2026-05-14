@@ -1,24 +1,25 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import type { IolCandle } from "@/lib/iol/rest";
-import type { IolDateRange } from "@/lib/iol/rest";
 
 const BASE = "/api/yahoo/v8/finance/chart";
 
-const RANGE_MAP: Record<IolDateRange, string> = {
-  "1M": "1mo",
-  "3M": "3mo",
-  "6M": "6mo",
-  "1A": "1y",
-  "5A": "5y",
+export type IolTimeframe = "1H" | "1D" | "1S" | "1M";
+
+// Maps each candle timeframe to Yahoo Finance interval + range
+const TF_MAP: Record<IolTimeframe, { interval: string; range: string }> = {
+  "1H": { interval: "60m",  range: "60d"  },
+  "1D": { interval: "1d",   range: "1y"   },
+  "1S": { interval: "1wk",  range: "5y"   },
+  "1M": { interval: "1mo",  range: "max"  },
 };
 
 export async function fetchYahooCandles(
   symbol: string,
-  range: IolDateRange,
+  timeframe: IolTimeframe = "1D",
 ): Promise<IolCandle[]> {
-  const r = RANGE_MAP[range];
+  const { interval, range } = TF_MAP[timeframe];
   const res = await fetch(
-    `${BASE}/${encodeURIComponent(symbol)}?interval=1d&range=${r}`,
+    `${BASE}/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`,
     { cache: "no-store" },
   );
   if (!res.ok) throw new Error(`Yahoo Finance ${res.status}: ${symbol}`);

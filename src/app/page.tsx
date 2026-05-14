@@ -16,7 +16,7 @@ import { useIolStore } from "@/lib/store/iol-store";
 import { useMarket } from "@/hooks/useMarket";
 import { cn } from "@/lib/utils";
 import type { Timeframe } from "@/lib/binance/types";
-import type { IolDateRange } from "@/lib/iol/rest";
+import type { IolTimeframe } from "@/lib/yahoo/rest";
 
 const CRYPTO_TIMEFRAMES: { label: string; value: Timeframe }[] = [
   { label: "1h", value: "1h" },
@@ -26,12 +26,11 @@ const CRYPTO_TIMEFRAMES: { label: string; value: Timeframe }[] = [
   { label: "1M", value: "1M" },
 ];
 
-const ARGENTINA_RANGES: { label: string; value: IolDateRange }[] = [
+const ARGENTINA_TIMEFRAMES: { label: string; value: IolTimeframe }[] = [
+  { label: "1H", value: "1H" },
+  { label: "1D", value: "1D" },
+  { label: "1S", value: "1S" },
   { label: "1M", value: "1M" },
-  { label: "3M", value: "3M" },
-  { label: "6M", value: "6M" },
-  { label: "1A", value: "1A" },
-  { label: "5A", value: "5A" },
 ];
 
 type MobileTab = "chart" | "watchlist" | "operar";
@@ -40,8 +39,8 @@ export default function HomePage() {
   const symbol = useChartStore((s) => s.symbol);
   const timeframe = useChartStore((s) => s.timeframe);
   const setTimeframe = useChartStore((s) => s.setTimeframe);
-  const dateRange = useIolStore((s) => s.dateRange);
-  const setDateRange = useIolStore((s) => s.setDateRange);
+  const iolTimeframe = useIolStore((s) => s.iolTimeframe);
+  const setIolTimeframe = useIolStore((s) => s.setIolTimeframe);
   const { isCrypto, isArgentina } = useMarket();
   const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
 
@@ -73,13 +72,13 @@ export default function HomePage() {
                 {label}
               </button>
             ))}
-            {isArgentina && ARGENTINA_RANGES.map(({ label, value }) => (
+            {isArgentina && ARGENTINA_TIMEFRAMES.map(({ label, value }) => (
               <button
                 key={value}
-                onClick={() => setDateRange(value)}
+                onClick={() => setIolTimeframe(value)}
                 className={cn(
                   "rounded px-2 py-0.5 text-xs font-medium transition-colors",
-                  dateRange === value
+                  iolTimeframe === value
                     ? "bg-tv-blue text-white"
                     : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
                 )}
