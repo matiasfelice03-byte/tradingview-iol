@@ -13,22 +13,57 @@ import { iolAuth } from "@/lib/iol/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct, formatARS } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CRYPTO_NAMES, ARGENTINA_NAMES, getCryptoLogoUrl, getSymbolColor } from "@/lib/symbolInfo";
 
 interface Row { symbol: string; price: number; pct: number; }
+
+function SymbolAvatar({ symbol, logoUrl }: { symbol: string; logoUrl?: string }) {
+  const [imgError, setImgError] = useState(false);
+  const color = getSymbolColor(symbol);
+  const initials = symbol.slice(0, 2).toUpperCase();
+
+  if (logoUrl && !imgError) {
+    return (
+      <div className="relative h-6 w-6 shrink-0">
+        <img
+          src={logoUrl}
+          alt={symbol}
+          width={24}
+          height={24}
+          className="h-6 w-6 rounded-full object-contain"
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+      style={{ backgroundColor: color }}
+    >
+      {initials}
+    </div>
+  );
+}
 
 function ArgentinaWatchlistItem({ simbolo, isActive, onSelect, onRemove }: {
   simbolo: string; isActive: boolean; onSelect: () => void; onRemove?: () => void;
 }) {
   const { quote } = useIolQuote(simbolo);
+  const name = ARGENTINA_NAMES[simbolo];
   return (
     <div
       onClick={onSelect}
       className={cn(
-        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover",
+        "group grid cursor-pointer grid-cols-[auto_1fr_auto_auto] items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-tv-panel-hover",
         isActive && "bg-tv-panel-hover",
       )}
     >
-      <span className="font-medium text-tv-text">{simbolo}</span>
+      <SymbolAvatar symbol={simbolo} />
+      <div className="min-w-0">
+        <div className="font-medium text-tv-text">{simbolo}</div>
+        {name && <div className="truncate text-[10px] text-tv-text-muted">{name}</div>}
+      </div>
       <span className="text-right tabular-nums text-tv-text">{quote ? formatARS(quote.ultimoPrecio) : "—"}</span>
       <div className="flex items-center justify-end gap-1">
         <span className={cn("tabular-nums", quote ? quote.variacion >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
@@ -51,6 +86,8 @@ function CryptoWatchlistItem({ symbol, isActive, onSelect, onRemove }: {
   const [price, setPrice] = useState<number | null>(null);
   const [pct, setPct] = useState<number | null>(null);
   const pair = symbol.endsWith("USDT") ? symbol : symbol + "USDT";
+  const base = pair.replace("USDT", "");
+  const name = CRYPTO_NAMES[base];
 
   useEffect(() => {
     fetchTickers24h([pair]).then((tickers) => {
@@ -63,11 +100,15 @@ function CryptoWatchlistItem({ symbol, isActive, onSelect, onRemove }: {
     <div
       onClick={onSelect}
       className={cn(
-        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover",
+        "group grid cursor-pointer grid-cols-[auto_1fr_auto_auto] items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-tv-panel-hover",
         isActive && "bg-tv-panel-hover",
       )}
     >
-      <span className="font-medium text-tv-text">{symbol.replace("USDT", "")}</span>
+      <SymbolAvatar symbol={base} logoUrl={getCryptoLogoUrl(base)} />
+      <div className="min-w-0">
+        <div className="font-medium text-tv-text">{base}</div>
+        {name && <div className="truncate text-[10px] text-tv-text-muted">{name}</div>}
+      </div>
       <span className="text-right tabular-nums text-tv-text">{price ? formatPrice(price) : "—"}</span>
       <div className="flex items-center justify-end gap-1">
         <span className={cn("tabular-nums", pct != null ? pct >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
@@ -280,12 +321,15 @@ export function Watchlist() {
             const row = rows[s];
             const isActive = s === symbol;
             const f = flash[s];
+            const base = s.replace("USDT", "");
+            const name = CRYPTO_NAMES[base];
             return (
               <div key={s} onClick={() => setSymbol(s)}
-                className={cn("group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover", isActive && "bg-tv-panel-hover")}>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-tv-text">{s.replace("USDT", "")}</span>
-                  <span className="text-[10px] text-tv-text-muted">USDT</span>
+                className={cn("group grid cursor-pointer grid-cols-[auto_1fr_auto_auto] items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-tv-panel-hover", isActive && "bg-tv-panel-hover")}>
+                <SymbolAvatar symbol={base} logoUrl={getCryptoLogoUrl(base)} />
+                <div className="min-w-0">
+                  <div className="font-medium text-tv-text">{base}</div>
+                  {name && <div className="truncate text-[10px] text-tv-text-muted">{name}</div>}
                 </div>
                 <span className={cn("text-right tabular-nums transition-colors", f === "up" && "text-tv-green", f === "down" && "text-tv-red", !f && "text-tv-text")}>
                   {row ? formatPrice(row.price) : "—"}

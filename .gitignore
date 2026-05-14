@@ -49,3 +49,4 @@ id_rsa*
 credentials.json
 .aws/
 .ssh/
+.env*.local
