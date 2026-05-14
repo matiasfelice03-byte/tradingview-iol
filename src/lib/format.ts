@@ -12,6 +12,16 @@ export function formatPct(n: number): string {
   return `${sign}${n.toFixed(2)}%`;
 }
 
+export function formatARS(n: number): string {
+  if (!isFinite(n)) return "—";
+  return n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function formatARSCurrency(n: number): string {
+  if (!isFinite(n)) return "—";
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 });
+}
+
 export function formatVolume(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;

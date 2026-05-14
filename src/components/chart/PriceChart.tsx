@@ -24,6 +24,8 @@ import {
 import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
+import { FibonacciOverlay, computeFibLevels } from "./FibonacciOverlay";
+import { AiPanel } from "@/components/ai/AiPanel";
 
 interface MeasurePoint {
   time: number;
@@ -35,6 +37,9 @@ interface MeasureState {
   b: MeasurePoint | null;
 }
 const INITIAL_MEASURE: MeasureState = { phase: "idle", a: null, b: null };
+
+interface FibSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
+const INITIAL_FIB: FibSketch = { phase: "idle", a: null, b: null };
 
 function durationLabel(aTime: number, bTime: number): string {
   const diff = Math.abs(bTime - aTime);
@@ -114,6 +119,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const tool = useChartStore((s) => s.tool);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
+  const fibDrawings = useChartStore((s) => s.fibDrawings);
+  const addFibDrawing = useChartStore((s) => s.addFibDrawing);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -123,6 +130,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   toolRef.current = tool;
   const addPriceLineRef = useRef(addPriceLine);
   addPriceLineRef.current = addPriceLine;
+  const addFibDrawingRef = useRef(addFibDrawing);
+  addFibDrawingRef.current = addFibDrawing;
   const symbolRef = useRef(symbol);
   symbolRef.current = symbol;
   const configRef = useRef(config);
@@ -133,9 +142,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [lastValues, setLastValues] = useState<LastValues>({});
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
+  const [fibSketch, setFibSketch] = useState<FibSketch>(INITIAL_FIB);
   const [renderTick, setRenderTick] = useState(0);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+  const fibSketchRef = useRef(fibSketch);
+  fibSketchRef.current = fibSketch;
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -253,24 +265,44 @@ export function PriceChart({ symbol, timeframe }: Props) {
             b: { time, price },
           });
         }
+        return;
+      }
+      if (toolRef.current === "fibonacci" || toolRef.current === "fibext") {
+        const sketch = fibSketchRef.current;
+        if (sketch.phase === "idle") {
+          setFibSketch({ phase: "placing", a: price, b: price });
+        } else {
+          const high = Math.max(sketch.a!, price);
+          const low = Math.min(sketch.a!, price);
+          addFibDrawingRef.current({
+            symbol: symbolRef.current,
+            type: toolRef.current === "fibext" ? "extension" : "retracement",
+            highPrice: high,
+            lowPrice: low,
+          });
+          setFibSketch(INITIAL_FIB);
+        }
       }
     });
 
     // Crosshair handler
     chart.subscribeCrosshairMove((param) => {
       if (
-        toolRef.current === "measure" &&
-        measureRef.current.phase === "placing" &&
         param.point &&
         param.time &&
         candleSeriesRef.current
       ) {
         const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
         if (price !== null && isFinite(price)) {
-          const time = Number(param.time);
-          setMeasure((prev) =>
-            prev.phase === "placing" ? { ...prev, b: { time, price } } : prev,
-          );
+          if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
+            const time = Number(param.time);
+            setMeasure((prev) =>
+              prev.phase === "placing" ? { ...prev, b: { time, price } } : prev,
+            );
+          }
+          if ((toolRef.current === "fibonacci" || toolRef.current === "fibext") && fibSketchRef.current.phase === "placing") {
+            setFibSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
+          }
         }
       }
 
@@ -527,13 +559,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
     }
   }, [priceLines, symbol]);
 
-  // Cursor style when drawing tools are active + reset measure on tool change
+  // Cursor style when drawing tools are active + reset on tool change
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.style.cursor =
-        tool === "hline" || tool === "measure" ? "crosshair" : "";
+        ["hline", "measure", "fibonacci", "fibext"].includes(tool) ? "crosshair" : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
+    if (tool !== "fibonacci" && tool !== "fibext") setFibSketch(INITIAL_FIB);
   }, [tool]);
 
   function updateEMAs() {
@@ -778,12 +811,40 @@ export function PriceChart({ symbol, timeframe }: Props) {
       );
     }
   }
+  // Fibonacci overlays
+  const fibOverlays: React.ReactNode[] = [];
+  const priceToCoord = (price: number) => candleSeriesRef.current?.priceToCoordinate(price) ?? null;
+  const containerWidth = containerRef.current?.clientWidth ?? 800;
+
+  if (fibSketch.phase === "placing" && fibSketch.a !== null && fibSketch.b !== null) {
+    const high = Math.max(fibSketch.a, fibSketch.b);
+    const low = Math.min(fibSketch.a, fibSketch.b);
+    const type = tool === "fibext" ? "extension" : "retracement";
+    const levels = computeFibLevels(high, low, type, priceToCoord);
+    fibOverlays.push(
+      <FibonacciOverlay key="sketch" levels={levels} chartWidth={containerWidth} isPreview formatPrice={formatPrice} />
+    );
+  }
+
+  for (const d of fibDrawings.filter((d) => d.symbol === symbol)) {
+    const levels = computeFibLevels(d.highPrice, d.lowPrice, d.type, priceToCoord);
+    fibOverlays.push(
+      <FibonacciOverlay key={d.id} levels={levels} chartWidth={containerWidth} formatPrice={formatPrice} />
+    );
+  }
+
   void renderTick;
 
+  const activeIndicators = (Object.keys(indicators) as (keyof typeof indicators)[]).filter((k) => indicators[k]);
+  const recentCandles = candlesRef.current.slice(-10).map((c) =>
+    `${new Date((c.time as number) * 1000).toISOString().slice(0, 10)}: O=${c.open.toFixed(4)} H=${c.high.toFixed(4)} L=${c.low.toFixed(4)} C=${c.close.toFixed(4)}`
+  ).join("\n");
+
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
+      {fibOverlays}
 
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div
@@ -929,6 +990,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
           />
         </div>
       )}
+
+      <AiPanel context={{
+        symbol,
+        price: lastPrice ? formatPrice(lastPrice.value) : "—",
+        pct: lastPrice ? lastPrice.pct.toFixed(2) : "0",
+        market: "crypto",
+        indicators: activeIndicators,
+        candles: recentCandles || undefined,
+      }} />
     </div>
   );
 }

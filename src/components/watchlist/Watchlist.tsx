@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, LogOut } from "lucide-react";
 import { fetchTickers24h } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
 import { useChartStore } from "@/lib/store/chart-store";
+import { useIolStore } from "@/lib/store/iol-store";
+import { useMarket } from "@/hooks/useMarket";
+import { useIolQuote } from "@/hooks/useIolQuote";
+import { iolAuth } from "@/lib/iol/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { formatPrice, formatPct } from "@/lib/format";
+import { formatPrice, formatPct, formatARS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface Row {
@@ -15,12 +19,72 @@ interface Row {
   pct: number;
 }
 
+function ArgentinaWatchlistItem({
+  simbolo,
+  isActive,
+  onSelect,
+  onRemove,
+}: {
+  simbolo: string;
+  isActive: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  const { quote } = useIolQuote(simbolo);
+  return (
+    <div
+      onClick={onSelect}
+      className={cn(
+        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors",
+        "hover:bg-tv-panel-hover",
+        isActive && "bg-tv-panel-hover",
+      )}
+    >
+      <span className="font-medium text-tv-text">{simbolo}</span>
+      <span className="text-right tabular-nums text-tv-text">
+        {quote ? formatARS(quote.ultimoPrecio) : "—"}
+      </span>
+      <div className="flex items-center justify-end gap-1">
+        <span
+          className={cn(
+            "tabular-nums",
+            quote
+              ? quote.variacion >= 0
+                ? "text-tv-green"
+                : "text-tv-red"
+              : "text-tv-text-muted",
+          )}
+        >
+          {quote ? formatPct(quote.variacion) : "—"}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Watchlist() {
+  const { isArgentina } = useMarket();
   const watchlist = useChartStore((s) => s.watchlist);
   const symbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
   const removeFromWatchlist = useChartStore((s) => s.removeFromWatchlist);
   const openSymbolDialog = useChartStore((s) => s.setSymbolDialogOpen);
+
+  const watchlistArgentina = useIolStore((s) => s.watchlistArgentina);
+  const selectedSymbol = useIolStore((s) => s.selectedSymbol);
+  const setSelectedSymbol = useIolStore((s) => s.setSelectedSymbol);
+  const removeFromArgentinaWatchlist = useIolStore((s) => s.removeFromArgentinaWatchlist);
+  const setLoggedIn = useIolStore((s) => s.setLoggedIn);
+
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [flash, setFlash] = useState<Record<string, "up" | "down" | null>>({});
 
@@ -80,6 +144,46 @@ export function Watchlist() {
       unsub();
     };
   }, [watchlist]);
+
+  if (isArgentina) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-tv-border px-3 py-2">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-tv-text-muted">
+            BYMA
+          </h2>
+          <button
+            onClick={() => {
+              iolAuth.clearSession();
+              setLoggedIn(false);
+            }}
+            className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
+            title="Cerrar sesión IOL"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-dim">
+          <span>Símbolo</span>
+          <span className="text-right">Precio</span>
+          <span className="text-right">Var%</span>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="flex flex-col">
+            {watchlistArgentina.map((s) => (
+              <ArgentinaWatchlistItem
+                key={s}
+                simbolo={s}
+                isActive={s === selectedSymbol}
+                onSelect={() => setSelectedSymbol(s)}
+                onRemove={() => removeFromArgentinaWatchlist(s)}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">

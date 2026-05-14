@@ -12,12 +12,22 @@ export type IndicatorKey =
   | "macd"
   | "volume";
 
-export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
+export type DrawingTool = "cursor" | "hline" | "measure" | "eraser" | "fibonacci" | "fibext";
 
 export interface PriceLine {
   id: string;
   symbol: string;
   price: number;
+  color?: string;
+}
+
+export interface FibDrawing {
+  id: string;
+  symbol: string;
+  type: "retracement" | "extension";
+  highPrice: number;
+  lowPrice: number;
+  color?: string;
 }
 
 export interface IndicatorConfig {
@@ -76,6 +86,7 @@ interface ChartState {
   // Ephemeral UI state (not persisted)
   tool: DrawingTool;
   priceLines: PriceLine[];
+  fibDrawings: FibDrawing[];
   symbolDialogOpen: boolean;
   /** Which indicator's settings dialog is open (null = closed) */
   settingsTarget: IndicatorKey | null;
@@ -92,6 +103,12 @@ interface ChartState {
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
   clearPriceLines: (symbol?: string) => void;
+  addFibDrawing: (d: Omit<FibDrawing, "id">) => void;
+  removeFibDrawing: (id: string) => void;
+  updateFibDrawing: (id: string, patch: Partial<Pick<FibDrawing, "type" | "color">>) => void;
+  clearFibDrawings: (symbol?: string) => void;
+  removePriceLine: (id: string) => void;
+  updatePriceLineColor: (id: string, color: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
 }
@@ -121,6 +138,7 @@ export const useChartStore = create<ChartState>()(
       watchlist: DEFAULT_WATCHLIST,
       tool: "cursor",
       priceLines: [],
+      fibDrawings: [],
       symbolDialogOpen: false,
       settingsTarget: null,
 
@@ -173,6 +191,36 @@ export const useChartStore = create<ChartState>()(
           priceLines: symbol
             ? state.priceLines.filter((p) => p.symbol !== symbol)
             : [],
+        })),
+      addFibDrawing: (d) =>
+        set((state) => ({
+          fibDrawings: [
+            ...state.fibDrawings,
+            {
+              ...d,
+              id: typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random()}`,
+            },
+          ],
+        })),
+      removeFibDrawing: (id) =>
+        set((state) => ({ fibDrawings: state.fibDrawings.filter((d) => d.id !== id) })),
+      updateFibDrawing: (id, patch) =>
+        set((state) => ({
+          fibDrawings: state.fibDrawings.map((d) => d.id === id ? { ...d, ...patch } : d),
+        })),
+      clearFibDrawings: (symbol) =>
+        set((state) => ({
+          fibDrawings: symbol
+            ? state.fibDrawings.filter((d) => d.symbol !== symbol)
+            : [],
+        })),
+      removePriceLine: (id) =>
+        set((state) => ({ priceLines: state.priceLines.filter((p) => p.id !== id) })),
+      updatePriceLineColor: (id, color) =>
+        set((state) => ({
+          priceLines: state.priceLines.map((p) => p.id === id ? { ...p, color } : p),
         })),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),

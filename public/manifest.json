@@ -1,0 +1,18 @@
+{
+  "name": "TradingView Argentina",
+  "short_name": "Trading AR",
+  "description": "Charts de cripto y acciones argentinas BYMA con órdenes IOL",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#131722",
+  "background_color": "#131722",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

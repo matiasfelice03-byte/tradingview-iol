@@ -16,9 +16,18 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TradingView Gratis — Crypto charts open source",
+  title: "TradingView Argentina — Crypto + BYMA",
   description:
-    "Plataforma de charts crypto en vivo. Alternativa gratis a TradingView. Powered by Binance + lightweight-charts.",
+    "Charts de cripto y acciones argentinas BYMA con órdenes IOL. Alternativa gratis a TradingView.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Trading AR",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({
@@ -31,6 +40,10 @@ export default function RootLayout({
       lang="es"
       className={`dark ${inter.variable} ${jetbrains.variable} h-full antialiased`}
     >
+      <head>
+        <meta name="theme-color" content="#131722" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
       </body>
