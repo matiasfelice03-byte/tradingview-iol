@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 import { NextRequest } from "next/server";
 
-const client = new Anthropic();
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY ?? "placeholder" });
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,31 +18,30 @@ Contexto actual del gráfico:
 - Indicadores activos: ${indicatorsList}
 ${context.candles ? `- Últimas velas: ${context.candles}` : ""}
 
-Puedes analizar el gráfico, comentar sobre tendencias, sugerir indicadores y niveles clave.
-Sé conciso (máximo 3 párrafos). Usa español argentino. Agrega disclaimer breve si das recomendaciones operativas.
+Podés analizar el gráfico, comentar tendencias, sugerir indicadores y niveles clave.
+Sé conciso (máximo 3 párrafos). Usá español argentino. Agregá disclaimer breve si das recomendaciones operativas.
 No uses markdown complejo, solo texto plano con saltos de línea.`;
 
-    const stream = await client.messages.stream({
-      model: "claude-haiku-4-5-20251001",
+    const stream = await client.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       max_tokens: 600,
-      system,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      stream: true,
+      messages: [
+        { role: "system", content: system },
+        ...messages.map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      ],
     });
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              controller.enqueue(encoder.encode(event.delta.text));
-            }
+          for await (const chunk of stream) {
+            const text = chunk.choices[0]?.delta?.content ?? "";
+            if (text) controller.enqueue(encoder.encode(text));
           }
         } finally {
           controller.close();

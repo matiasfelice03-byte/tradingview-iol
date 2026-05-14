@@ -135,7 +135,7 @@ export function AiPanel({ context }: Props) {
           <div className="flex shrink-0 items-center justify-between border-b border-tv-border px-3 py-2">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-tv-blue" />
-              <span className="text-[12px] font-semibold text-tv-text">Claude Haiku</span>
+              <span className="text-[12px] font-semibold text-tv-text">Llama 3.3</span>
               <span className="rounded bg-tv-blue/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tv-blue">
                 Beta
               </span>
