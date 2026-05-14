@@ -3,27 +3,41 @@ import type { IolCandle } from "@/lib/iol/rest";
 
 const BASE = "/api/yahoo/v8/finance/chart";
 
-export type IolTimeframe = "1H" | "1D" | "1S" | "1M";
+export type IolTimeframe = "1H" | "4H" | "1D" | "1S" | "1M";
 
-// Maps each candle timeframe to Yahoo Finance interval + range
-const TF_MAP: Record<IolTimeframe, { interval: string; range: string }> = {
-  "1H": { interval: "60m",  range: "60d"  },
-  "1D": { interval: "1d",   range: "1y"   },
-  "1S": { interval: "1wk",  range: "5y"   },
-  "1M": { interval: "1mo",  range: "max"  },
+// Yahoo Finance doesn't have native 4h — fetch 1h and aggregate
+const TF_MAP: Record<Exclude<IolTimeframe, "4H">, { interval: string; range: string }> = {
+  "1H": { interval: "60m", range: "60d" },
+  "1D": { interval: "1d",  range: "1y"  },
+  "1S": { interval: "1wk", range: "5y"  },
+  "1M": { interval: "1mo", range: "max" },
 };
 
-export async function fetchYahooCandles(
-  symbol: string,
-  timeframe: IolTimeframe = "1D",
-): Promise<IolCandle[]> {
-  const { interval, range } = TF_MAP[timeframe];
+function aggregate4h(candles: IolCandle[]): IolCandle[] {
+  if (candles.length === 0) return [];
+  const result: IolCandle[] = [];
+  let i = 0;
+  while (i < candles.length) {
+    const block = candles.slice(i, i + 4);
+    result.push({
+      time: block[0].time,
+      open: block[0].open,
+      high: Math.max(...block.map((c) => c.high)),
+      low: Math.min(...block.map((c) => c.low)),
+      close: block[block.length - 1].close,
+      volume: block.reduce((s, c) => s + c.volume, 0),
+    });
+    i += 4;
+  }
+  return result;
+}
+
+async function fetchRaw(symbol: string, interval: string, range: string): Promise<IolCandle[]> {
   const res = await fetch(
     `${BASE}/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`,
     { cache: "no-store" },
   );
   if (!res.ok) throw new Error(`Yahoo Finance ${res.status}: ${symbol}`);
-
   const json = await res.json();
   const result = json?.chart?.result?.[0];
   if (!result) throw new Error("Yahoo Finance: sin datos para " + symbol);
@@ -47,4 +61,17 @@ export async function fetchYahooCandles(
     }))
     .filter((c) => c.open > 0 && c.close > 0)
     .sort((a, b) => a.time - b.time);
+}
+
+export async function fetchYahooCandles(
+  symbol: string,
+  timeframe: IolTimeframe = "1D",
+): Promise<IolCandle[]> {
+  if (timeframe === "4H") {
+    // Fetch 1h data for 120 days and aggregate into 4h blocks
+    const raw = await fetchRaw(symbol, "60m", "120d");
+    return aggregate4h(raw);
+  }
+  const { interval, range } = TF_MAP[timeframe];
+  return fetchRaw(symbol, interval, range);
 }

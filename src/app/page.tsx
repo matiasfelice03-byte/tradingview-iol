@@ -28,6 +28,7 @@ const CRYPTO_TIMEFRAMES: { label: string; value: Timeframe }[] = [
 
 const ARGENTINA_TIMEFRAMES: { label: string; value: IolTimeframe }[] = [
   { label: "1H", value: "1H" },
+  { label: "4H", value: "4H" },
   { label: "1D", value: "1D" },
   { label: "1S", value: "1S" },
   { label: "1M", value: "1M" },
