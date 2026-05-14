@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchYahooCandles, type IolTimeframe } from "@/lib/yahoo/rest";
-import type { IolCandle } from "@/lib/iol/rest";
+import { fetchIolHistorical, type IolCandle, type IolDateRange } from "@/lib/iol/rest";
+
+const TF_TO_IOL_RANGE: Partial<Record<IolTimeframe, IolDateRange>> = {
+  "1D": "5A",
+  "1S": "5A",
+  "1M": "5A",
+};
 
 export function useIolHistorical(
   simbolo: string | null,
@@ -20,7 +26,12 @@ export function useIolHistorical(
     setLoading(true);
     setError(null);
 
-    fetchYahooCandles(simbolo + ".BA", timeframe)
+    const iolRange = TF_TO_IOL_RANGE[timeframe];
+    const load = iolRange
+      ? fetchIolHistorical(simbolo, iolRange)
+      : fetchYahooCandles(simbolo + ".BA", timeframe);
+
+    load
       .then((data) => {
         if (!cancelled) {
           setCandles(data);

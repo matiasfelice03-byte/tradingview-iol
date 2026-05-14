@@ -280,13 +280,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
       priceLineVisible: false,
       lastValueVisible: false,
     });
-    ema200Ref.current = chart.addSeries(LineSeries, {
-      color: INDICATOR_COLORS.ema200,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-
     chartRef.current = chart;
 
     // Click handler
@@ -321,14 +314,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
           }
         }
         for (const d of fibDrawingsRef.current.filter((f) => f.symbol === sym)) {
-          const levels = d.type === "extension" ? EXTENSION_LEVELS : RETRACEMENT_LEVELS;
-          const range = d.highPrice - d.lowPrice;
-          for (const l of levels) {
-            const p = d.highPrice - range * l.ratio;
-            const lineY = series.priceToCoordinate(p);
-            if (lineY !== null && Math.abs(lineY - clickY) < 8) {
+          const yH = series.priceToCoordinate(d.highPrice);
+          const yL = series.priceToCoordinate(d.lowPrice);
+          if (yH !== null && yL !== null) {
+            const top = Math.min(yH, yL) - 8;
+            const bot = Math.max(yH, yL) + 8;
+            if (clickY >= top && clickY <= bot) {
               setSelectedDrawingId(d.id);
-              setContextMenu({ kind: "fib", id: d.id, x: clickX, y: lineY });
+              setContextMenu({ kind: "fib", id: d.id, x: clickX, y: (top + bot) / 2 });
               return;
             }
           }
@@ -638,7 +631,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
     ema20Ref.current?.applyOptions({ visible: v("ema20") });
     ema50Ref.current?.applyOptions({ visible: v("ema50") });
-    ema200Ref.current?.applyOptions({ visible: v("ema200") });
+    if (ema200Ref.current) ema200Ref.current.applyOptions({ visible: v("ema200") });
     if (rsiRef.current) rsiRef.current.applyOptions({ visible: v("rsi") });
     if (rsi30Ref.current) rsi30Ref.current.applyOptions({ visible: v("rsi") });
     if (rsi70Ref.current) rsi70Ref.current.applyOptions({ visible: v("rsi") });
@@ -704,9 +697,19 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (tool !== "cursor") { setContextMenu(null); setSelectedDrawingId(null); }
   }, [tool]);
 
-  // EMA 200 explicit refresh when toggled on
+  // EMA 200 lazy creation/removal
   useEffect(() => {
-    if (indicators.ema200 && candlesRef.current.length > 0) updateEMAs();
+    if (!chartRef.current) return;
+    if (indicators.ema200 && !ema200Ref.current) {
+      ema200Ref.current = chartRef.current.addSeries(LineSeries, {
+        color: INDICATOR_COLORS.ema200, lineWidth: 2,
+        priceLineVisible: false, lastValueVisible: false,
+      }, 0);
+      updateEMAs();
+    } else if (!indicators.ema200 && ema200Ref.current) {
+      chartRef.current.removeSeries(ema200Ref.current);
+      ema200Ref.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.ema200]);
 
