@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MousePointer2, Minus, Ruler, Trash2, TrendingUp } from "lucide-react";
+import { MousePointer2, Minus, Ruler, Trash2, TrendingUp, Magnet } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 export function LeftSidebar() {
   const tool = useChartStore((s) => s.tool);
   const setTool = useChartStore((s) => s.setTool);
+  const magnet = useChartStore((s) => s.magnet);
+  const setMagnet = useChartStore((s) => s.setMagnet);
   const clearPriceLines = useChartStore((s) => s.clearPriceLines);
   const clearFibDrawings = useChartStore((s) => s.clearFibDrawings);
   const symbol = useChartStore((s) => s.symbol);
@@ -102,6 +104,22 @@ export function LeftSidebar() {
           </div>
         )}
       </div>
+
+      <div className="my-0.5 h-px w-6 bg-tv-border" />
+
+      <Tooltip>
+        <TooltipTrigger
+          onClick={() => setMagnet(!magnet)}
+          aria-label="Imán débil"
+          className={cn("flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover", magnet ? "bg-tv-blue/15 text-tv-blue" : "text-tv-text-muted hover:text-tv-text")}
+        >
+          <Magnet className="h-4 w-4" />
+        </TooltipTrigger>
+        <TooltipContent side="right" className="text-xs">
+          <div className="font-medium">Imán débil {magnet ? "(activo)" : "(inactivo)"}</div>
+          <div className="mt-0.5 text-[10px] text-tv-text-muted">Adhiere al OHLC más cercano al dibujar</div>
+        </TooltipContent>
+      </Tooltip>
 
       <Tooltip>
         <TooltipTrigger

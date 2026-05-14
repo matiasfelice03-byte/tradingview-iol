@@ -92,6 +92,29 @@ interface LastValues {
   volume?: number;
 }
 
+function snapToOHLC(
+  rawPrice: number,
+  time: number,
+  candles: Candle[],
+  priceToCoord: (p: number) => number | null,
+  thresholdPx = 10,
+): number {
+  const c = candles.find((x) => Number(x.time) === time)
+    ?? candles.reduce<Candle | null>((b, x) => !b || Math.abs(Number(x.time) - time) < Math.abs(Number(b.time) - time) ? x : b, null);
+  if (!c) return rawPrice;
+  const rawY = priceToCoord(rawPrice);
+  if (rawY === null) return rawPrice;
+  let nearest = rawPrice;
+  let minDist = thresholdPx;
+  for (const p of [c.open, c.high, c.low, c.close]) {
+    const y = priceToCoord(p);
+    if (y === null) continue;
+    const dist = Math.abs(y - rawY);
+    if (dist < minDist) { minDist = dist; nearest = p; }
+  }
+  return nearest;
+}
+
 interface PaneOffset {
   top: number;
   height: number;
@@ -118,6 +141,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
   const tool = useChartStore((s) => s.tool);
+  const magnet = useChartStore((s) => s.magnet);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
   const fibDrawings = useChartStore((s) => s.fibDrawings);
@@ -137,6 +161,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  const magnetRef = useRef(magnet);
+  magnetRef.current = magnet;
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -235,8 +261,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // Click handler — add horizontal price line when hline tool is active
     chart.subscribeClick((param) => {
       if (!param.point || !candleSeriesRef.current) return;
-      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-      if (price === null || !isFinite(price)) return;
+      const rawPrice = candleSeriesRef.current.coordinateToPrice(param.point.y);
+      if (rawPrice === null || !isFinite(rawPrice)) return;
+      let price: number = Number(rawPrice);
+
+      if (magnetRef.current && param.time) {
+        price = snapToOHLC(price, Number(param.time), candlesRef.current,
+          (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+      }
 
       if (toolRef.current === "hline") {
         addPriceLineRef.current(price, symbolRef.current);
@@ -293,8 +325,13 @@ export function PriceChart({ symbol, timeframe }: Props) {
         param.time &&
         candleSeriesRef.current
       ) {
-        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-        if (price !== null && isFinite(price)) {
+        const rawPrice2 = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (rawPrice2 !== null && isFinite(rawPrice2)) {
+          let price: number = Number(rawPrice2);
+          if (magnetRef.current) {
+            price = snapToOHLC(price, Number(param.time), candlesRef.current,
+              (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+          }
           if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
             const time = Number(param.time);
             setMeasure((prev) =>

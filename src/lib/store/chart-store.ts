@@ -83,6 +83,8 @@ interface ChartState {
   config: IndicatorConfig;
   watchlist: string[];
 
+  magnet: boolean;
+
   // Ephemeral UI state (not persisted)
   tool: DrawingTool;
   priceLines: PriceLine[];
@@ -92,6 +94,7 @@ interface ChartState {
   settingsTarget: IndicatorKey | null;
 
   // Actions
+  setMagnet: (v: boolean) => void;
   setSymbol: (s: string) => void;
   setTimeframe: (t: Timeframe) => void;
   toggleIndicator: (key: IndicatorKey) => void;
@@ -116,6 +119,7 @@ interface ChartState {
 export const useChartStore = create<ChartState>()(
   persist(
     (set) => ({
+      magnet: false,
       symbol: "BTCUSDT",
       timeframe: "15m" as Timeframe,
       indicators: {
@@ -142,6 +146,7 @@ export const useChartStore = create<ChartState>()(
       symbolDialogOpen: false,
       settingsTarget: null,
 
+      setMagnet: (magnet) => set({ magnet }),
       setSymbol: (symbol) => set({ symbol }),
       setTimeframe: (timeframe) => set({ timeframe }),
       toggleIndicator: (key) =>
@@ -228,6 +233,7 @@ export const useChartStore = create<ChartState>()(
     {
       name: "tv-gratis-chart-state",
       partialize: (s) => ({
+        magnet: s.magnet,
         symbol: s.symbol,
         timeframe: s.timeframe,
         indicators: s.indicators,

@@ -56,6 +56,29 @@ function durationLabel(aTime: number, bTime: number): string {
   return `${Math.floor((diff % 3600) / 60)}m`;
 }
 
+function snapToOHLC(
+  rawPrice: number,
+  time: number,
+  candles: IolCandle[],
+  priceToCoord: (p: number) => number | null,
+  thresholdPx = 10,
+): number {
+  const c = candles.find((x) => Number(x.time) === time)
+    ?? candles.reduce<IolCandle | null>((b, x) => !b || Math.abs(Number(x.time) - time) < Math.abs(Number(b.time) - time) ? x : b, null);
+  if (!c) return rawPrice;
+  const rawY = priceToCoord(rawPrice);
+  if (rawY === null) return rawPrice;
+  let nearest = rawPrice;
+  let minDist = thresholdPx;
+  for (const p of [c.open, c.high, c.low, c.close]) {
+    const y = priceToCoord(p);
+    if (y === null) continue;
+    const dist = Math.abs(y - rawY);
+    if (dist < minDist) { minDist = dist; nearest = p; }
+  }
+  return nearest;
+}
+
 function toCandles(arr: IolCandle[]): Candle[] {
   return arr as unknown as Candle[];
 }
@@ -115,6 +138,10 @@ export function IolPriceChart() {
   const candlesRef = useRef<IolCandle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
   const dataLoadedRef = useRef(false);
+
+  const magnet = useChartStore((s) => s.magnet);
+  const magnetRef = useRef(magnet);
+  magnetRef.current = magnet;
 
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -202,8 +229,13 @@ export function IolPriceChart() {
 
     chart.subscribeClick((param) => {
       if (!param.point || !candleSeriesRef.current) return;
-      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-      if (price === null || !isFinite(price)) return;
+      const rawPrice = candleSeriesRef.current.coordinateToPrice(param.point.y);
+      if (rawPrice === null || !isFinite(rawPrice)) return;
+      let price: number = Number(rawPrice);
+      if (magnetRef.current && param.time) {
+        price = snapToOHLC(price, Number(param.time), candlesRef.current,
+          (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+      }
       const currentTool = toolRef.current;
       const clickY = param.point.y;
       const clickX = param.point.x;
@@ -274,8 +306,13 @@ export function IolPriceChart() {
 
     chart.subscribeCrosshairMove((param) => {
       if (param.point && param.time && candleSeriesRef.current) {
-        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-        if (price !== null && isFinite(price)) {
+        const rawP = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (rawP !== null && isFinite(rawP)) {
+          let price: number = Number(rawP);
+          if (magnetRef.current) {
+            price = snapToOHLC(price, Number(param.time), candlesRef.current,
+              (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+          }
           if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
             setMeasure((prev) => prev.phase === "placing" ? { ...prev, b: { time: Number(param.time), price } } : prev);
           }
