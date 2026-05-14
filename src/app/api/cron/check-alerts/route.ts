@@ -21,23 +21,27 @@ async function getIolToken(username: string, password: string): Promise<string |
   } catch { return null; }
 }
 
-async function getArgentinaPrice(symbol: string): Promise<number | null> {
+async function getArgentinaPrice(symbol: string, token?: string | null): Promise<number | null> {
   try {
+    const auth = token ? `Bearer ${token}` : "Bearer public";
     const res = await fetch(
       `https://api.invertironline.com/api/v2/bCBA/Titulos/${symbol}/Cotizacion`,
-      { headers: { Authorization: "Bearer public" } }
+      { headers: { Authorization: auth } }
     );
-    if (!res.ok) {
-      // Try Yahoo Finance as fallback
-      const yRes = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.BA?interval=1d&range=1d`
-      );
-      const yData = await yRes.json();
-      const price = yData?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      return price ?? null;
+    if (res.ok) {
+      const data = await res.json();
+      return data?.ultimoPrecio ?? null;
     }
-    const data = await res.json();
-    return data?.ultimoPrecio ?? null;
+    // Fallback: Yahoo Finance with user-agent
+    const yRes = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.BA?interval=1d&range=1d`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
+    );
+    if (yRes.ok) {
+      const yData = await yRes.json();
+      return yData?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -80,8 +84,12 @@ export async function GET(req: NextRequest) {
   let triggered = 0;
 
   for (const alert of alerts) {
+    let iolToken: string | null = null;
+    if (alert.market === "argentina" && alert.iol_username && alert.iol_password) {
+      iolToken = await getIolToken(alert.iol_username, alert.iol_password);
+    }
     const price = alert.market === "argentina"
-      ? await getArgentinaPrice(alert.symbol)
+      ? await getArgentinaPrice(alert.symbol, iolToken)
       : await getCryptoPrice(alert.symbol);
 
     if (price === null) continue;
