@@ -23,10 +23,10 @@ interface Props {
 }
 
 const SUGGESTIONS = [
-  "¿Cómo ves el gráfico actual?",
-  "¿Qué indicadores me recomendás?",
-  "¿Ves algún patrón relevante?",
-  "¿Cuáles son los soportes y resistencias?",
+  "Analizá el gráfico y decime si está en tendencia",
+  "¿Cuáles son los soportes y resistencias clave?",
+  "¿Qué dicen los indicadores activos?",
+  "¿Hay algún patrón de velas o figura chartista?",
 ];
 
 type PanelSize = "small" | "medium" | "large";
