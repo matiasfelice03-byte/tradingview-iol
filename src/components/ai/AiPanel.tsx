@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bot, X, Send, Loader2, ChevronDown } from "lucide-react";
+import { Bot, X, Send, Loader2, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -29,8 +29,17 @@ const SUGGESTIONS = [
   "¿Cuáles son los soportes y resistencias?",
 ];
 
+type PanelSize = "small" | "medium" | "large";
+
+const SIZES: Record<PanelSize, { h: number; w: number }> = {
+  small:  { h: 260, w: 260 },
+  medium: { h: 420, w: 320 },
+  large:  { h: 600, w: 420 },
+};
+
 export function AiPanel({ context }: Props) {
   const [open, setOpen] = useState(false);
+  const [size, setSize] = useState<PanelSize>("medium");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -38,9 +47,7 @@ export function AiPanel({ context }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
   useEffect(() => {
@@ -54,9 +61,7 @@ export function AiPanel({ context }: Props) {
     setMessages(nextMessages);
     setInput("");
     setStreaming(true);
-
-    const assistantMsg: Message = { role: "assistant", content: "" };
-    setMessages((prev) => [...prev, assistantMsg]);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
       const res = await fetch("/api/ai", {
@@ -64,15 +69,11 @@ export function AiPanel({ context }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: nextMessages, context }),
       });
-
-      if (!res.ok || !res.body) {
-        throw new Error("Error al conectar con la IA");
-      }
+      if (!res.ok || !res.body) throw new Error("Error al conectar con la IA");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -98,11 +99,14 @@ export function AiPanel({ context }: Props) {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
   };
+
+  const cycleSize = () => {
+    setSize((s) => s === "small" ? "medium" : s === "medium" ? "large" : "small");
+  };
+
+  const { h, w } = SIZES[size];
 
   return (
     <>
@@ -123,17 +127,20 @@ export function AiPanel({ context }: Props) {
 
       {/* Panel */}
       {open && (
-        <div className="pointer-events-auto absolute bottom-0 right-0 z-40 flex h-[420px] w-72 flex-col rounded-tl-xl border-l border-t border-tv-border bg-tv-panel shadow-2xl sm:w-80">
+        <div
+          className="pointer-events-auto absolute bottom-0 right-0 z-40 flex flex-col rounded-tl-xl border-l border-t border-tv-border bg-tv-panel shadow-2xl transition-all duration-150"
+          style={{ height: h, width: w }}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-tv-border px-3 py-2">
+          <div className="flex shrink-0 items-center justify-between border-b border-tv-border px-3 py-2">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-tv-blue" />
-              <span className="text-[12px] font-semibold text-tv-text">Asistente IA</span>
+              <span className="text-[12px] font-semibold text-tv-text">Claude Haiku</span>
               <span className="rounded bg-tv-blue/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tv-blue">
                 Beta
               </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               {messages.length > 0 && (
                 <button
                   onClick={() => setMessages([])}
@@ -142,14 +149,25 @@ export function AiPanel({ context }: Props) {
                   Limpiar
                 </button>
               )}
-              <button onClick={() => setOpen(false)} className="rounded p-1 text-tv-text-muted hover:text-tv-text">
+              <button
+                onClick={cycleSize}
+                className="rounded p-1 text-tv-text-muted hover:text-tv-text"
+                title={size === "large" ? "Achicar" : "Agrandar"}
+              >
+                {size === "large" ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded p-1 text-tv-text-muted hover:text-tv-red"
+                title="Cerrar"
+              >
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
           {/* Context chip */}
-          <div className="flex items-center gap-1.5 border-b border-tv-border px-3 py-1.5 text-[10px] text-tv-text-muted">
+          <div className="flex shrink-0 items-center gap-1.5 border-b border-tv-border px-3 py-1.5 text-[10px] text-tv-text-muted">
             <span className="font-medium text-tv-text">{context.symbol}</span>
             <span>·</span>
             <span>{context.price}</span>
@@ -181,9 +199,7 @@ export function AiPanel({ context }: Props) {
                 <div
                   className={cn(
                     "max-w-[85%] rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed whitespace-pre-wrap",
-                    m.role === "user"
-                      ? "bg-tv-blue/20 text-tv-text"
-                      : "bg-tv-bg text-tv-text",
+                    m.role === "user" ? "bg-tv-blue/20 text-tv-text" : "bg-tv-bg text-tv-text",
                   )}
                 >
                   {m.content}
@@ -197,7 +213,7 @@ export function AiPanel({ context }: Props) {
           </div>
 
           {/* Input */}
-          <div className="border-t border-tv-border p-2 flex items-center gap-2">
+          <div className="shrink-0 border-t border-tv-border p-2 flex items-center gap-2">
             <input
               ref={inputRef}
               value={input}
