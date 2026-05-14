@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AlertChecker } from "@/components/layout/AlertChecker";
 import "./globals.css";
 
 const inter = Inter({
@@ -46,6 +47,7 @@ export default function RootLayout({
       </head>
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
+        <AlertChecker />
       </body>
     </html>
   );

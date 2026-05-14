@@ -1,6 +1,7 @@
 "use client";
 
-import { Zap, ChevronDown } from "lucide-react";
+import { Zap, ChevronDown, Compass } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -8,11 +9,15 @@ import { Separator } from "@/components/ui/separator";
 import { MarketSwitcher } from "@/components/layout/MarketSwitcher";
 import { useMarket } from "@/hooks/useMarket";
 import { useChartStore } from "@/lib/store/chart-store";
+import { cn } from "@/lib/utils";
 
 export function Header() {
   const { isCrypto } = useMarket();
   const symbol = useChartStore((s) => s.symbol);
   const setSymbolDialogOpen = useChartStore((s) => s.setSymbolDialogOpen);
+  const router = useRouter();
+  const pathname = usePathname();
+  const isExplorar = pathname === "/explorar";
 
   return (
     <header className="border-b border-tv-border bg-tv-panel">
@@ -28,6 +33,20 @@ export function Header() {
 
         <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <MarketSwitcher />
+
+        <Separator orientation="vertical" className="h-6 bg-tv-border" />
+        <button
+          onClick={() => (isExplorar ? router.push("/") : router.push("/explorar"))}
+          className={cn(
+            "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+            isExplorar
+              ? "bg-tv-blue/20 text-tv-blue"
+              : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+          )}
+        >
+          <Compass className="h-3.5 w-3.5" />
+          Explorar
+        </button>
 
         {/* Desktop: full chart controls */}
         {isCrypto && (
