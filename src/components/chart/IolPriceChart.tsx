@@ -28,6 +28,7 @@ import { MeasureOverlay } from "./MeasureOverlay";
 import { FibonacciOverlay, computeFibLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { AiPanel } from "@/components/ai/AiPanel";
+import { AlertsPanel } from "@/components/chart/AlertsPanel";
 import type { Candle } from "@/lib/binance/types";
 
 const TV_COLORS = {
@@ -674,6 +675,7 @@ export function IolPriceChart() {
         ))}
       </div>
 
+      <AlertsPanel symbol={selectedSymbol} market="argentina" currentPrice={lastPrice?.value ?? 0} />
       <AiPanel context={{
         symbol: selectedSymbol,
         price: lastPrice ? formatARS(lastPrice.value) : "—",

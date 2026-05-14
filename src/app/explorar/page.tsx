@@ -27,7 +27,7 @@ const CRYPTO_PAIRS = [
   "FIL", "SAND",
 ];
 
-type Tab = "buscar" | "listas" | "alertas";
+type Tab = "buscar" | "listas";
 
 // ─── Search Tab ───────────────────────────────────────────────────────────────
 
@@ -752,7 +752,7 @@ export default function ExplorarPage() {
       <div className="flex flex-col flex-1 min-h-0">
         {/* Tabs */}
         <div className="flex gap-0 border-b border-tv-border bg-tv-panel px-4">
-          {(["buscar", "listas", "alertas"] as Tab[]).map((t) => (
+          {(["buscar", "listas"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -763,11 +763,7 @@ export default function ExplorarPage() {
                   : "border-transparent text-tv-text-muted hover:text-tv-text",
               )}
             >
-              {t === "buscar"
-                ? "Buscar"
-                : t === "listas"
-                ? "Mis Listas"
-                : "Alertas"}
+              {t === "buscar" ? "Buscar" : "Mis Listas"}
             </button>
           ))}
         </div>
@@ -776,7 +772,6 @@ export default function ExplorarPage() {
         <div className="flex-1 min-h-0 overflow-y-auto">
           {tab === "buscar" && <SearchTab />}
           {tab === "listas" && <ListsTab />}
-          {tab === "alertas" && <AlertsTab />}
         </div>
       </div>
     </div>

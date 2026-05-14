@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Plus, X, LogOut } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Plus, X, LogOut, ChevronDown, Check } from "lucide-react";
 import { fetchTickers24h } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
 import { useChartStore } from "@/lib/store/chart-store";
 import { useIolStore } from "@/lib/store/iol-store";
+import { useExplorarStore } from "@/lib/store/explorar-store";
 import { useMarket } from "@/hooks/useMarket";
 import { useIolQuote } from "@/hooks/useIolQuote";
 import { iolAuth } from "@/lib/iol/auth";
@@ -13,60 +14,129 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct, formatARS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-interface Row {
-  symbol: string;
-  price: number;
-  pct: number;
-}
+interface Row { symbol: string; price: number; pct: number; }
 
-function ArgentinaWatchlistItem({
-  simbolo,
-  isActive,
-  onSelect,
-  onRemove,
-}: {
-  simbolo: string;
-  isActive: boolean;
-  onSelect: () => void;
-  onRemove: () => void;
+function ArgentinaWatchlistItem({ simbolo, isActive, onSelect, onRemove }: {
+  simbolo: string; isActive: boolean; onSelect: () => void; onRemove?: () => void;
 }) {
   const { quote } = useIolQuote(simbolo);
   return (
     <div
       onClick={onSelect}
       className={cn(
-        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors",
-        "hover:bg-tv-panel-hover",
+        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover",
         isActive && "bg-tv-panel-hover",
       )}
     >
       <span className="font-medium text-tv-text">{simbolo}</span>
-      <span className="text-right tabular-nums text-tv-text">
-        {quote ? formatARS(quote.ultimoPrecio) : "—"}
-      </span>
+      <span className="text-right tabular-nums text-tv-text">{quote ? formatARS(quote.ultimoPrecio) : "—"}</span>
       <div className="flex items-center justify-end gap-1">
-        <span
-          className={cn(
-            "tabular-nums",
-            quote
-              ? quote.variacion >= 0
-                ? "text-tv-green"
-                : "text-tv-red"
-              : "text-tv-text-muted",
-          )}
-        >
+        <span className={cn("tabular-nums", quote ? quote.variacion >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
           {quote ? formatPct(quote.variacion) : "—"}
         </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible"
-        >
-          <X className="h-3 w-3" />
-        </button>
+        {onRemove && (
+          <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function CryptoWatchlistItem({ symbol, isActive, onSelect, onRemove }: {
+  symbol: string; isActive: boolean; onSelect: () => void; onRemove?: () => void;
+}) {
+  const [price, setPrice] = useState<number | null>(null);
+  const [pct, setPct] = useState<number | null>(null);
+  const pair = symbol.endsWith("USDT") ? symbol : symbol + "USDT";
+
+  useEffect(() => {
+    fetchTickers24h([pair]).then((tickers) => {
+      const t = tickers[0];
+      if (t) { setPrice(t.lastPrice); setPct(t.priceChangePercent); }
+    }).catch(() => {});
+  }, [pair]);
+
+  return (
+    <div
+      onClick={onSelect}
+      className={cn(
+        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover",
+        isActive && "bg-tv-panel-hover",
+      )}
+    >
+      <span className="font-medium text-tv-text">{symbol.replace("USDT", "")}</span>
+      <span className="text-right tabular-nums text-tv-text">{price ? formatPrice(price) : "—"}</span>
+      <div className="flex items-center justify-end gap-1">
+        <span className={cn("tabular-nums", pct != null ? pct >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
+          {pct != null ? formatPct(pct) : "—"}
+        </span>
+        {onRemove && (
+          <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Dropdown to switch between default list and custom watchlists
+function ListSwitcher({ currentId, onSelect, defaultLabel }: {
+  currentId: string | null; onSelect: (id: string | null) => void; defaultLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const { watchlists } = useExplorarStore();
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const currentName = currentId ? (watchlists.find((w) => w.id === currentId)?.name ?? defaultLabel) : defaultLabel;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-tv-text-muted hover:text-tv-text transition-colors"
+      >
+        {currentName}
+        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded border border-tv-border bg-tv-panel shadow-lg overflow-hidden">
+          <button
+            onClick={() => { onSelect(null); setOpen(false); }}
+            className="flex w-full items-center justify-between px-3 py-2 text-[11px] hover:bg-tv-panel-hover text-tv-text"
+          >
+            {defaultLabel}
+            {currentId === null && <Check className="h-3 w-3 text-tv-blue" />}
+          </button>
+          {watchlists.length > 0 && <div className="border-t border-tv-border" />}
+          {watchlists.map((w) => (
+            <button
+              key={w.id}
+              onClick={() => { onSelect(w.id); setOpen(false); }}
+              className="flex w-full items-center justify-between px-3 py-2 text-[11px] hover:bg-tv-panel-hover text-tv-text"
+            >
+              <span className="truncate">{w.name}</span>
+              {currentId === w.id && <Check className="h-3 w-3 shrink-0 text-tv-blue" />}
+            </button>
+          ))}
+          {watchlists.length === 0 && (
+            <p className="px-3 py-2 text-[10px] text-tv-text-muted">No tenés listas creadas</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -84,100 +154,106 @@ export function Watchlist() {
   const setSelectedSymbol = useIolStore((s) => s.setSelectedSymbol);
   const removeFromArgentinaWatchlist = useIolStore((s) => s.removeFromArgentinaWatchlist);
   const setLoggedIn = useIolStore((s) => s.setLoggedIn);
+  const setMarket = useIolStore((s) => s.setMarket);
+
+  const { watchlists, removeFromWatchlist: removeFromCustomList } = useExplorarStore();
 
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [flash, setFlash] = useState<Record<string, "up" | "down" | null>>({});
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+
+  const selectedCustomList = selectedListId ? watchlists.find((w) => w.id === selectedListId) : null;
 
   useEffect(() => {
-    if (watchlist.length === 0) return;
+    if (isArgentina || watchlist.length === 0 || selectedListId !== null) return;
     let cancelled = false;
 
-    fetchTickers24h(watchlist)
-      .then((tickers) => {
-        if (cancelled) return;
-        const map: Record<string, Row> = {};
-        tickers.forEach((t) => {
-          map[t.symbol] = {
-            symbol: t.symbol,
-            price: t.lastPrice,
-            pct: t.priceChangePercent,
-          };
-        });
-        setRows(map);
-      })
-      .catch(console.error);
+    fetchTickers24h(watchlist).then((tickers) => {
+      if (cancelled) return;
+      const map: Record<string, Row> = {};
+      tickers.forEach((t) => { map[t.symbol] = { symbol: t.symbol, price: t.lastPrice, pct: t.priceChangePercent }; });
+      setRows(map);
+    }).catch(console.error);
 
     const ws = getBinanceWS();
     const unsub = ws.subscribeMiniTickers(watchlist, (tick) => {
       setRows((prev) => {
         const prevRow = prev[tick.symbol];
         if (prevRow) {
-          if (tick.close > prevRow.price) {
-            setFlash((f) => ({ ...f, [tick.symbol]: "up" }));
-            setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
-              300,
-            );
-          } else if (tick.close < prevRow.price) {
-            setFlash((f) => ({ ...f, [tick.symbol]: "down" }));
-            setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
-              300,
-            );
+          const dir = tick.close > prevRow.price ? "up" : tick.close < prevRow.price ? "down" : null;
+          if (dir) {
+            setFlash((f) => ({ ...f, [tick.symbol]: dir }));
+            setTimeout(() => setFlash((f) => ({ ...f, [tick.symbol]: null })), 300);
           }
         }
-        return {
-          ...prev,
-          [tick.symbol]: {
-            symbol: tick.symbol,
-            price: tick.close,
-            pct: tick.pct,
-          },
-        };
+        return { ...prev, [tick.symbol]: { symbol: tick.symbol, price: tick.close, pct: tick.pct } };
       });
     });
 
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [watchlist]);
+    return () => { cancelled = true; unsub(); };
+  }, [watchlist, isArgentina, selectedListId]);
 
+  const defaultLabel = isArgentina ? "BYMA" : "Crypto";
+
+  // Custom list selected
+  if (selectedCustomList) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-tv-border px-3 py-2">
+          <ListSwitcher currentId={selectedListId} onSelect={setSelectedListId} defaultLabel={defaultLabel} />
+        </div>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-muted">
+          <span>Símbolo</span><span className="text-right">Precio</span><span className="text-right">Var%</span>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="flex flex-col">
+            {selectedCustomList.items.map((item) =>
+              item.market === "argentina" ? (
+                <ArgentinaWatchlistItem
+                  key={item.symbol}
+                  simbolo={item.symbol}
+                  isActive={isArgentina && selectedSymbol === item.symbol}
+                  onSelect={() => { setMarket("argentina"); setSelectedSymbol(item.symbol); }}
+                  onRemove={() => removeFromCustomList(selectedListId!, item.symbol)}
+                />
+              ) : (
+                <CryptoWatchlistItem
+                  key={item.symbol}
+                  symbol={item.symbol}
+                  isActive={!isArgentina && symbol === item.symbol}
+                  onSelect={() => { setMarket("crypto"); setSymbol(item.symbol.endsWith("USDT") ? item.symbol : item.symbol + "USDT"); }}
+                  onRemove={() => removeFromCustomList(selectedListId!, item.symbol)}
+                />
+              )
+            )}
+            {selectedCustomList.items.length === 0 && (
+              <p className="p-4 text-center text-xs text-tv-text-muted">Lista vacía. Agregá activos desde Explorar.</p>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
+  // Default Argentina list
   if (isArgentina) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-tv-border px-3 py-2">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-tv-text-muted">
-            BYMA
-          </h2>
-          <button
-            onClick={() => {
-              iolAuth.clearSession();
-              setLoggedIn(false);
-            }}
-            className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
-            title="Cerrar sesión IOL"
-          >
+          <ListSwitcher currentId={null} onSelect={setSelectedListId} defaultLabel={defaultLabel} />
+          <button onClick={() => { iolAuth.clearSession(); setLoggedIn(false); }}
+            className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red" title="Cerrar sesión IOL">
             <LogOut className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-dim">
-          <span>Símbolo</span>
-          <span className="text-right">Precio</span>
-          <span className="text-right">Var%</span>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-muted">
+          <span>Símbolo</span><span className="text-right">Precio</span><span className="text-right">Var%</span>
         </div>
         <ScrollArea className="flex-1">
           <div className="flex flex-col">
             {watchlistArgentina.map((s) => (
-              <ArgentinaWatchlistItem
-                key={s}
-                simbolo={s}
-                isActive={s === selectedSymbol}
-                onSelect={() => setSelectedSymbol(s)}
-                onRemove={() => removeFromArgentinaWatchlist(s)}
-              />
+              <ArgentinaWatchlistItem key={s} simbolo={s} isActive={s === selectedSymbol}
+                onSelect={() => setSelectedSymbol(s)} onRemove={() => removeFromArgentinaWatchlist(s)} />
             ))}
           </div>
         </ScrollArea>
@@ -185,25 +261,18 @@ export function Watchlist() {
     );
   }
 
+  // Default Crypto list
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-tv-border px-3 py-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-tv-text-muted">
-          Watchlist
-        </h2>
-        <button
-          onClick={() => openSymbolDialog(true)}
-          className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
-          title="Agregar símbolo"
-          aria-label="Agregar al watchlist"
-        >
+        <ListSwitcher currentId={null} onSelect={setSelectedListId} defaultLabel={defaultLabel} />
+        <button onClick={() => openSymbolDialog(true)}
+          className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text" title="Agregar símbolo">
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-dim">
-        <span>Símbolo</span>
-        <span className="text-right">Precio</span>
-        <span className="text-right">24h</span>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-muted">
+        <span>Símbolo</span><span className="text-right">Precio</span><span className="text-right">24h</span>
       </div>
       <ScrollArea className="flex-1">
         <div className="flex flex-col">
@@ -212,63 +281,28 @@ export function Watchlist() {
             const isActive = s === symbol;
             const f = flash[s];
             return (
-              <div
-                key={s}
-                onClick={() => setSymbol(s)}
-                className={cn(
-                  "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors",
-                  "hover:bg-tv-panel-hover",
-                  isActive && "bg-tv-panel-hover",
-                )}
-              >
+              <div key={s} onClick={() => setSymbol(s)}
+                className={cn("group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-tv-panel-hover", isActive && "bg-tv-panel-hover")}>
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-tv-text">
-                    {s.replace("USDT", "")}
-                  </span>
-                  <span className="text-[10px] text-tv-text-dim">USDT</span>
+                  <span className="font-medium text-tv-text">{s.replace("USDT", "")}</span>
+                  <span className="text-[10px] text-tv-text-muted">USDT</span>
                 </div>
-                <span
-                  className={cn(
-                    "text-right tabular-nums transition-colors",
-                    f === "up" && "text-tv-green",
-                    f === "down" && "text-tv-red",
-                    !f && "text-tv-text",
-                  )}
-                >
+                <span className={cn("text-right tabular-nums transition-colors", f === "up" && "text-tv-green", f === "down" && "text-tv-red", !f && "text-tv-text")}>
                   {row ? formatPrice(row.price) : "—"}
                 </span>
                 <div className="flex items-center justify-end gap-1">
-                  <span
-                    className={cn(
-                      "tabular-nums",
-                      row
-                        ? row.pct >= 0
-                          ? "text-tv-green"
-                          : "text-tv-red"
-                        : "text-tv-text-muted",
-                    )}
-                  >
+                  <span className={cn("tabular-nums", row ? row.pct >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
                     {row ? formatPct(row.pct) : "—"}
                   </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFromWatchlist(s);
-                    }}
-                    className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible"
-                    aria-label={`Quitar ${s} del watchlist`}
-                  >
+                  <button onClick={(e) => { e.stopPropagation(); removeFromWatchlist(s); }}
+                    className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
                     <X className="h-3 w-3" />
                   </button>
                 </div>
               </div>
             );
           })}
-          {watchlist.length === 0 && (
-            <div className="p-4 text-center text-xs text-tv-text-muted">
-              Tu watchlist está vacío
-            </div>
-          )}
+          {watchlist.length === 0 && <div className="p-4 text-center text-xs text-tv-text-muted">Tu watchlist está vacío</div>}
         </div>
       </ScrollArea>
     </div>

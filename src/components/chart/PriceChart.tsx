@@ -26,6 +26,7 @@ import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { FibonacciOverlay, computeFibLevels } from "./FibonacciOverlay";
 import { AiPanel } from "@/components/ai/AiPanel";
+import { AlertsPanel } from "@/components/chart/AlertsPanel";
 
 interface MeasurePoint {
   time: number;
@@ -991,6 +992,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         </div>
       )}
 
+      <AlertsPanel symbol={symbol.replace("USDT", "")} market="crypto" currentPrice={lastPrice?.value ?? 0} />
       <AiPanel context={{
         symbol,
         price: lastPrice ? formatPrice(lastPrice.value) : "—",
