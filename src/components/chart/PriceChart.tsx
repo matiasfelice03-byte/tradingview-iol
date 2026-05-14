@@ -24,7 +24,9 @@ import {
 import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
-import { FibonacciOverlay, computeFibLevels } from "./FibonacciOverlay";
+import { FibonacciOverlay, computeFibLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
+import { PriceRangeOverlay } from "./PriceRangeOverlay";
+import { DrawingContextMenu } from "./DrawingContextMenu";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AlertsPanel } from "@/components/chart/AlertsPanel";
 
@@ -41,6 +43,9 @@ const INITIAL_MEASURE: MeasureState = { phase: "idle", a: null, b: null };
 
 interface FibSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
 const INITIAL_FIB: FibSketch = { phase: "idle", a: null, b: null };
+
+interface PriceRangeSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
+const INITIAL_PRICERANGE: PriceRangeSketch = { phase: "idle", a: null, b: null };
 
 function durationLabel(aTime: number, bTime: number): string {
   const diff = Math.abs(bTime - aTime);
@@ -145,8 +150,16 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const magnet = useChartStore((s) => s.magnet);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
+  const removePriceLine = useChartStore((s) => s.removePriceLine);
+  const updatePriceLineColor = useChartStore((s) => s.updatePriceLineColor);
   const fibDrawings = useChartStore((s) => s.fibDrawings);
   const addFibDrawing = useChartStore((s) => s.addFibDrawing);
+  const removeFibDrawing = useChartStore((s) => s.removeFibDrawing);
+  const updateFibDrawing = useChartStore((s) => s.updateFibDrawing);
+  const priceRanges = useChartStore((s) => s.priceRanges);
+  const addPriceRange = useChartStore((s) => s.addPriceRange);
+  const removePriceRange = useChartStore((s) => s.removePriceRange);
+  const updatePriceRangeColor = useChartStore((s) => s.updatePriceRangeColor);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -158,6 +171,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   addPriceLineRef.current = addPriceLine;
   const addFibDrawingRef = useRef(addFibDrawing);
   addFibDrawingRef.current = addFibDrawing;
+  const addPriceRangeRef = useRef(addPriceRange);
+  addPriceRangeRef.current = addPriceRange;
   const setToolRef = useRef(setTool);
   setToolRef.current = setTool;
   const symbolRef = useRef(symbol);
@@ -167,6 +182,13 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const magnetRef = useRef(magnet);
   magnetRef.current = magnet;
   const settingCrosshairRef = useRef(false);
+  const fibDrawingsRef = useRef(fibDrawings);
+  fibDrawingsRef.current = fibDrawings;
+  const priceLinesRef = useRef(priceLines);
+  priceLinesRef.current = priceLines;
+  const priceRangesRef = useRef(priceRanges);
+  priceRangesRef.current = priceRanges;
+  const lastClickRef = useRef<{ ts: number; y: number } | null>(null);
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -174,11 +196,16 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [fibSketch, setFibSketch] = useState<FibSketch>(INITIAL_FIB);
+  const [priceRangeSketch, setPriceRangeSketch] = useState<PriceRangeSketch>(INITIAL_PRICERANGE);
   const [renderTick, setRenderTick] = useState(0);
+  const [contextMenu, setContextMenu] = useState<{ kind: "fib" | "hline" | "pricerange"; id: string; x: number; y: number } | null>(null);
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const measureRef = useRef(measure);
   measureRef.current = measure;
   const fibSketchRef = useRef(fibSketch);
   fibSketchRef.current = fibSketch;
+  const priceRangeSketchRef = useRef(priceRangeSketch);
+  priceRangeSketchRef.current = priceRangeSketch;
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -262,7 +289,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
 
     chartRef.current = chart;
 
-    // Click handler — add horizontal price line when hline tool is active
+    // Click handler
     chart.subscribeClick((param) => {
       if (!param.point || !candleSeriesRef.current) return;
       const rawPrice = candleSeriesRef.current.coordinateToPrice(param.point.y);
@@ -272,6 +299,56 @@ export function PriceChart({ symbol, timeframe }: Props) {
       if (magnetRef.current && param.time) {
         price = snapToOHLC(price, Number(param.time), candlesRef.current,
           (p) => candleSeriesRef.current?.priceToCoordinate(p) ?? null);
+      }
+
+      const clickY = param.point.y;
+      const clickX = param.point.x;
+      const now = Date.now();
+      const prev = lastClickRef.current;
+      const isDoubleClick = prev !== null && (now - prev.ts < 400) && Math.abs(clickY - prev.y) < 20;
+      lastClickRef.current = { ts: now, y: clickY };
+
+      if (toolRef.current === "cursor") {
+        if (!isDoubleClick) { setContextMenu(null); setSelectedDrawingId(null); return; }
+        const sym = symbolRef.current;
+        const series = candleSeriesRef.current;
+        for (const pl of priceLinesRef.current.filter((p) => p.symbol === sym)) {
+          const lineY = series.priceToCoordinate(pl.price);
+          if (lineY !== null && Math.abs(lineY - clickY) < 8) {
+            setSelectedDrawingId(pl.id);
+            setContextMenu({ kind: "hline", id: pl.id, x: clickX, y: lineY });
+            return;
+          }
+        }
+        for (const d of fibDrawingsRef.current.filter((f) => f.symbol === sym)) {
+          const levels = d.type === "extension" ? EXTENSION_LEVELS : RETRACEMENT_LEVELS;
+          const range = d.highPrice - d.lowPrice;
+          for (const l of levels) {
+            const p = d.highPrice - range * l.ratio;
+            const lineY = series.priceToCoordinate(p);
+            if (lineY !== null && Math.abs(lineY - clickY) < 8) {
+              setSelectedDrawingId(d.id);
+              setContextMenu({ kind: "fib", id: d.id, x: clickX, y: lineY });
+              return;
+            }
+          }
+        }
+        for (const r of priceRangesRef.current.filter((r) => r.symbol === sym)) {
+          const yH = series.priceToCoordinate(r.highPrice);
+          const yL = series.priceToCoordinate(r.lowPrice);
+          if (yH !== null && yL !== null) {
+            const top = Math.min(yH, yL);
+            const bot = Math.max(yH, yL);
+            if (clickY >= top - 6 && clickY <= bot + 6) {
+              setSelectedDrawingId(r.id);
+              setContextMenu({ kind: "pricerange", id: r.id, x: clickX, y: (top + bot) / 2 });
+              return;
+            }
+          }
+        }
+        setSelectedDrawingId(null);
+        setContextMenu(null);
+        return;
       }
 
       if (toolRef.current === "hline") {
@@ -285,24 +362,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
         const time = Number(param.time);
         const current = measureRef.current;
         if (current.phase === "idle") {
-          setMeasure({
-            phase: "placing",
-            a: { time, price },
-            b: { time, price },
-          });
+          setMeasure({ phase: "placing", a: { time, price }, b: { time, price } });
         } else if (current.phase === "placing") {
-          setMeasure({
-            phase: "done",
-            a: current.a,
-            b: { time, price },
-          });
+          setMeasure({ phase: "done", a: current.a, b: { time, price } });
           setToolRef.current("cursor");
         } else {
-          setMeasure({
-            phase: "placing",
-            a: { time, price },
-            b: { time, price },
-          });
+          setMeasure({ phase: "placing", a: { time, price }, b: { time, price } });
         }
         return;
       }
@@ -320,6 +385,19 @@ export function PriceChart({ symbol, timeframe }: Props) {
             lowPrice: low,
           });
           setFibSketch(INITIAL_FIB);
+          setToolRef.current("cursor");
+        }
+        return;
+      }
+      if (toolRef.current === "pricerange") {
+        const sketch = priceRangeSketchRef.current;
+        if (sketch.phase === "idle") {
+          setPriceRangeSketch({ phase: "placing", a: price, b: price });
+        } else {
+          const high = Math.max(sketch.a!, price);
+          const low = Math.min(sketch.a!, price);
+          addPriceRangeRef.current({ symbol: symbolRef.current, highPrice: high, lowPrice: low });
+          setPriceRangeSketch(INITIAL_PRICERANGE);
           setToolRef.current("cursor");
         }
       }
@@ -354,6 +432,9 @@ export function PriceChart({ symbol, timeframe }: Props) {
           }
           if ((toolRef.current === "fibonacci" || toolRef.current === "fibext") && fibSketchRef.current.phase === "placing") {
             setFibSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
+          }
+          if (toolRef.current === "pricerange" && priceRangeSketchRef.current.phase === "placing") {
+            setPriceRangeSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
           }
         }
       }
@@ -615,11 +696,19 @@ export function PriceChart({ symbol, timeframe }: Props) {
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.style.cursor =
-        ["hline", "measure", "fibonacci", "fibext"].includes(tool) ? "crosshair" : "";
+        ["hline", "measure", "fibonacci", "fibext", "pricerange"].includes(tool) ? "crosshair" : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
     if (tool !== "fibonacci" && tool !== "fibext") setFibSketch(INITIAL_FIB);
+    if (tool !== "pricerange") setPriceRangeSketch(INITIAL_PRICERANGE);
+    if (tool !== "cursor") { setContextMenu(null); setSelectedDrawingId(null); }
   }, [tool]);
+
+  // EMA 200 explicit refresh when toggled on
+  useEffect(() => {
+    if (indicators.ema200 && candlesRef.current.length > 0) updateEMAs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ema200]);
 
   function updateEMAs() {
     const c = candlesRef.current;
@@ -881,7 +970,20 @@ export function PriceChart({ symbol, timeframe }: Props) {
   for (const d of fibDrawings.filter((d) => d.symbol === symbol)) {
     const levels = computeFibLevels(d.highPrice, d.lowPrice, d.type, priceToCoord);
     fibOverlays.push(
-      <FibonacciOverlay key={d.id} levels={levels} chartWidth={containerWidth} formatPrice={formatPrice} />
+      <FibonacciOverlay key={d.id} levels={levels} chartWidth={containerWidth} isSelected={selectedDrawingId === d.id} formatPrice={formatPrice} />
+    );
+  }
+
+  // Price range overlays
+  const priceRangeOverlays: React.ReactNode[] = [];
+  if (priceRangeSketch.phase === "placing" && priceRangeSketch.a !== null && priceRangeSketch.b !== null) {
+    priceRangeOverlays.push(
+      <PriceRangeOverlay key="sketch" highPrice={Math.max(priceRangeSketch.a, priceRangeSketch.b)} lowPrice={Math.min(priceRangeSketch.a, priceRangeSketch.b)} priceToCoord={priceToCoord} chartWidth={containerWidth} isPreview formatPrice={formatPrice} />
+    );
+  }
+  for (const r of priceRanges.filter((r) => r.symbol === symbol)) {
+    priceRangeOverlays.push(
+      <PriceRangeOverlay key={r.id} highPrice={r.highPrice} lowPrice={r.lowPrice} color={r.color} priceToCoord={priceToCoord} chartWidth={containerWidth} isSelected={selectedDrawingId === r.id} formatPrice={formatPrice} />
     );
   }
 
@@ -893,10 +995,27 @@ export function PriceChart({ symbol, timeframe }: Props) {
   ).join("\n");
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className="relative h-full w-full overflow-hidden" onClick={() => { if (contextMenu) { setContextMenu(null); setSelectedDrawingId(null); } }}>
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
       {fibOverlays}
+      {priceRangeOverlays}
+
+      {contextMenu && contextMenu.kind === "fib" && (() => {
+        const d = fibDrawings.find((x) => x.id === contextMenu.id);
+        if (!d) return null;
+        return <DrawingContextMenu kind="fib" x={contextMenu.x} y={contextMenu.y} color={d.color} fibType={d.type} onFibTypeChange={(t) => updateFibDrawing(d.id, { type: t })} onColorChange={(c) => updateFibDrawing(d.id, { color: c })} onDelete={() => removeFibDrawing(d.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
+      })()}
+      {contextMenu && contextMenu.kind === "hline" && (() => {
+        const pl = priceLines.find((x) => x.id === contextMenu.id);
+        if (!pl) return null;
+        return <DrawingContextMenu kind="hline" x={contextMenu.x} y={contextMenu.y} color={pl.color} onColorChange={(c) => updatePriceLineColor(pl.id, c)} onDelete={() => removePriceLine(pl.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
+      })()}
+      {contextMenu && contextMenu.kind === "pricerange" && (() => {
+        const r = priceRanges.find((x) => x.id === contextMenu.id);
+        if (!r) return null;
+        return <DrawingContextMenu kind="pricerange" x={contextMenu.x} y={contextMenu.y} color={r.color} onColorChange={(c) => updatePriceRangeColor(r.id, c)} onDelete={() => removePriceRange(r.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
+      })()}
 
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div

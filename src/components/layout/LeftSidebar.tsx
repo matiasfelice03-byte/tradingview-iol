@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MousePointer2, Minus, Ruler, Trash2, TrendingUp, Magnet } from "lucide-react";
+import { MousePointer2, Minus, Ruler, Trash2, TrendingUp, Magnet, RectangleHorizontal } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ export function LeftSidebar() {
   const setMagnet = useChartStore((s) => s.setMagnet);
   const clearPriceLines = useChartStore((s) => s.clearPriceLines);
   const clearFibDrawings = useChartStore((s) => s.clearFibDrawings);
+  const clearPriceRanges = useChartStore((s) => s.clearPriceRanges);
   const symbol = useChartStore((s) => s.symbol);
 
   const [fibOpen, setFibOpen] = useState(false);
@@ -105,6 +106,20 @@ export function LeftSidebar() {
         )}
       </div>
 
+      <Tooltip>
+        <TooltipTrigger
+          onClick={() => setTool("pricerange")}
+          aria-label="Zona de precio"
+          className={cn("flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover", tool === "pricerange" ? "bg-tv-blue/15 text-tv-blue" : "text-tv-text-muted hover:text-tv-text")}
+        >
+          <RectangleHorizontal className="h-4 w-4" />
+        </TooltipTrigger>
+        <TooltipContent side="right" className="text-xs">
+          <div className="font-medium">Zona de precio</div>
+          <div className="mt-0.5 text-[10px] text-tv-text-muted">Marca soporte o resistencia entre dos niveles</div>
+        </TooltipContent>
+      </Tooltip>
+
       <div className="my-0.5 h-px w-6 bg-tv-border" />
 
       <Tooltip>
@@ -123,7 +138,7 @@ export function LeftSidebar() {
 
       <Tooltip>
         <TooltipTrigger
-          onClick={() => { clearPriceLines(symbol); clearFibDrawings(symbol); }}
+          onClick={() => { clearPriceLines(symbol); clearFibDrawings(symbol); clearPriceRanges(symbol); }}
           aria-label="Borrar dibujos"
           className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
         >

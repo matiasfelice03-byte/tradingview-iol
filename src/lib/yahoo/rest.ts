@@ -1,8 +1,6 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import type { IolCandle } from "@/lib/iol/rest";
 
-const BASE = "/api/yahoo/v8/finance/chart";
-
 export type IolTimeframe = "1H" | "4H" | "1D" | "1S" | "1M";
 
 // Yahoo Finance doesn't have native 4h — fetch 1h and aggregate
@@ -33,11 +31,17 @@ function aggregate4h(candles: IolCandle[]): IolCandle[] {
 }
 
 async function fetchRaw(symbol: string, interval: string, range: string): Promise<IolCandle[]> {
-  const res = await fetch(
-    `${BASE}/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`,
-    { cache: "no-store" },
-  );
-  if (!res.ok) throw new Error(`Yahoo Finance ${res.status}: ${symbol}`);
+  const path = `/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+  let res: Response;
+  try {
+    // Fetch directly from browser — avoids Vercel IP blocking by Yahoo Finance
+    res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status}`);
+  } catch {
+    // Fallback to Next.js proxy rewrite
+    res = await fetch(`/api/yahoo/v8/finance/chart${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Yahoo Finance ${res.status}: ${symbol}`);
+  }
   const json = await res.json();
   const result = json?.chart?.result?.[0];
   if (!result) throw new Error("Yahoo Finance: sin datos para " + symbol);

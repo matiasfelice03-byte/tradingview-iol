@@ -26,6 +26,7 @@ import { formatARS, formatPct } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { FibonacciOverlay, computeFibLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
+import { PriceRangeOverlay } from "./PriceRangeOverlay";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AlertsPanel } from "@/components/chart/AlertsPanel";
@@ -90,6 +91,9 @@ const INITIAL_MEASURE: MeasureState = { phase: "idle", a: null, b: null };
 interface FibSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
 const INITIAL_FIB: FibSketch = { phase: "idle", a: null, b: null };
 
+interface PriceRangeSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
+const INITIAL_PRICERANGE: PriceRangeSketch = { phase: "idle", a: null, b: null };
+
 interface HoverInfo { o: number; h: number; l: number; c: number; v: number; time: number; pct: number; }
 interface LastValues { ema20?: number; ema50?: number; ema200?: number; rsi?: number; macd?: number; macdSignal?: number; macdHist?: number; volume?: number; }
 interface PaneOffset { top: number; height: number; }
@@ -117,6 +121,10 @@ export function IolPriceChart() {
   const addFibDrawing = useChartStore((s) => s.addFibDrawing);
   const removeFibDrawing = useChartStore((s) => s.removeFibDrawing);
   const updateFibDrawing = useChartStore((s) => s.updateFibDrawing);
+  const priceRanges = useChartStore((s) => s.priceRanges);
+  const addPriceRange = useChartStore((s) => s.addPriceRange);
+  const removePriceRange = useChartStore((s) => s.removePriceRange);
+  const updatePriceRangeColor = useChartStore((s) => s.updatePriceRangeColor);
   const removePriceLine = useChartStore((s) => s.removePriceLine);
   const updatePriceLineColor = useChartStore((s) => s.updatePriceLineColor);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
@@ -157,6 +165,11 @@ export function IolPriceChart() {
   configRef.current = config;
   const setToolRef = useRef(setTool);
   setToolRef.current = setTool;
+  const addPriceRangeRef = useRef(addPriceRange);
+  addPriceRangeRef.current = addPriceRange;
+  const priceRangesRef = useRef(priceRanges);
+  priceRangesRef.current = priceRanges;
+  const lastClickRef = useRef<{ ts: number; y: number } | null>(null);
   const fibDrawingsRef = useRef(fibDrawings);
   fibDrawingsRef.current = fibDrawings;
   const priceLinesRef = useRef(priceLines);
@@ -168,9 +181,10 @@ export function IolPriceChart() {
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [fibSketch, setFibSketch] = useState<FibSketch>(INITIAL_FIB);
+  const [priceRangeSketch, setPriceRangeSketch] = useState<PriceRangeSketch>(INITIAL_PRICERANGE);
   const [renderTick, setRenderTick] = useState(0);
   const [contextMenu, setContextMenu] = useState<{
-    kind: "fib" | "hline";
+    kind: "fib" | "hline" | "pricerange";
     id: string;
     x: number;
     y: number;
@@ -180,6 +194,8 @@ export function IolPriceChart() {
   measureRef.current = measure;
   const fibSketchRef = useRef(fibSketch);
   fibSketchRef.current = fibSketch;
+  const priceRangeSketchRef = useRef(priceRangeSketch);
+  priceRangeSketchRef.current = priceRangeSketch;
 
   const { candles, loading, error } = useIolHistorical(selectedSymbol, iolTimeframe);
   const { quote } = useIolQuote(selectedSymbol);
@@ -244,11 +260,16 @@ export function IolPriceChart() {
       const clickY = param.point.y;
       const clickX = param.point.x;
 
+      const now = Date.now();
+      const prev = lastClickRef.current;
+      const isDoubleClick = prev !== null && (now - prev.ts < 400) && Math.abs(clickY - prev.y) < 20;
+      lastClickRef.current = { ts: now, y: clickY };
+
       if (currentTool === "cursor") {
-        const symbol = selectedSymbolRef.current;
+        if (!isDoubleClick) { setContextMenu(null); setSelectedDrawingId(null); return; }
+        const sym = selectedSymbolRef.current;
         const series = candleSeriesRef.current;
-        // Check price lines
-        for (const pl of priceLinesRef.current.filter((p) => p.symbol === symbol)) {
+        for (const pl of priceLinesRef.current.filter((p) => p.symbol === sym)) {
           const lineY = series.priceToCoordinate(pl.price);
           if (lineY !== null && Math.abs(lineY - clickY) < 8) {
             setSelectedDrawingId(pl.id);
@@ -256,8 +277,7 @@ export function IolPriceChart() {
             return;
           }
         }
-        // Check fib drawings
-        for (const d of fibDrawingsRef.current.filter((f) => f.symbol === symbol)) {
+        for (const d of fibDrawingsRef.current.filter((f) => f.symbol === sym)) {
           const levels = d.type === "extension" ? EXTENSION_LEVELS : RETRACEMENT_LEVELS;
           const range = d.highPrice - d.lowPrice;
           for (const l of levels) {
@@ -266,6 +286,19 @@ export function IolPriceChart() {
             if (lineY !== null && Math.abs(lineY - clickY) < 8) {
               setSelectedDrawingId(d.id);
               setContextMenu({ kind: "fib", id: d.id, x: clickX, y: lineY });
+              return;
+            }
+          }
+        }
+        for (const r of priceRangesRef.current.filter((r) => r.symbol === sym)) {
+          const yH = series.priceToCoordinate(r.highPrice);
+          const yL = series.priceToCoordinate(r.lowPrice);
+          if (yH !== null && yL !== null) {
+            const top = Math.min(yH, yL);
+            const bot = Math.max(yH, yL);
+            if (clickY >= top - 6 && clickY <= bot + 6) {
+              setSelectedDrawingId(r.id);
+              setContextMenu({ kind: "pricerange", id: r.id, x: clickX, y: (top + bot) / 2 });
               return;
             }
           }
@@ -308,6 +341,19 @@ export function IolPriceChart() {
           setFibSketch(INITIAL_FIB);
           setToolRef.current("cursor");
         }
+        return;
+      }
+      if (currentTool === "pricerange") {
+        const sketch = priceRangeSketchRef.current;
+        if (sketch.phase === "idle") {
+          setPriceRangeSketch({ phase: "placing", a: price, b: price });
+        } else {
+          const high = Math.max(sketch.a!, price);
+          const low = Math.min(sketch.a!, price);
+          addPriceRangeRef.current({ symbol: selectedSymbolRef.current, highPrice: high, lowPrice: low });
+          setPriceRangeSketch(INITIAL_PRICERANGE);
+          setToolRef.current("cursor");
+        }
       }
     });
 
@@ -332,6 +378,9 @@ export function IolPriceChart() {
           }
           if ((toolRef.current === "fibonacci" || toolRef.current === "fibext") && fibSketchRef.current.phase === "placing") {
             setFibSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
+          }
+          if (toolRef.current === "pricerange" && priceRangeSketchRef.current.phase === "placing") {
+            setPriceRangeSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
           }
         }
       }
@@ -503,11 +552,19 @@ export function IolPriceChart() {
   // Cursor + reset on tool change
   useEffect(() => {
     if (containerRef.current) {
-      containerRef.current.style.cursor = ["hline", "measure", "fibonacci", "fibext"].includes(tool) ? "crosshair" : "";
+      containerRef.current.style.cursor = ["hline", "measure", "fibonacci", "fibext", "pricerange"].includes(tool) ? "crosshair" : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
     if (tool !== "fibonacci" && tool !== "fibext") setFibSketch(INITIAL_FIB);
+    if (tool !== "pricerange") setPriceRangeSketch(INITIAL_PRICERANGE);
+    if (tool !== "cursor") { setContextMenu(null); setSelectedDrawingId(null); }
   }, [tool]);
+
+  // EMA 200 explicit refresh when toggled on
+  useEffect(() => {
+    if (indicators.ema200 && candlesRef.current.length > 0) updateEMAs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ema200]);
 
   function updateEMAs() {
     const c = candlesRef.current;
@@ -606,6 +663,19 @@ export function IolPriceChart() {
     );
   }
 
+  // Price range overlays
+  const priceRangeOverlays: React.ReactNode[] = [];
+  if (priceRangeSketch.phase === "placing" && priceRangeSketch.a !== null && priceRangeSketch.b !== null) {
+    priceRangeOverlays.push(
+      <PriceRangeOverlay key="sketch" highPrice={Math.max(priceRangeSketch.a, priceRangeSketch.b)} lowPrice={Math.min(priceRangeSketch.a, priceRangeSketch.b)} priceToCoord={priceToCoord} chartWidth={containerWidth} isPreview formatPrice={formatARS} />
+    );
+  }
+  for (const r of priceRanges.filter((r) => r.symbol === selectedSymbol)) {
+    priceRangeOverlays.push(
+      <PriceRangeOverlay key={r.id} highPrice={r.highPrice} lowPrice={r.lowPrice} color={r.color} priceToCoord={priceToCoord} chartWidth={containerWidth} isSelected={selectedDrawingId === r.id} formatPrice={formatARS} />
+    );
+  }
+
   void renderTick;
 
   const activeIndicators = (Object.keys(indicators) as (keyof typeof indicators)[]).filter((k) => indicators[k]);
@@ -621,6 +691,7 @@ export function IolPriceChart() {
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
       {fibOverlays}
+      {priceRangeOverlays}
 
       {contextMenu && contextMenu.kind === "fib" && (() => {
         const d = fibDrawings.find((x) => x.id === contextMenu.id);
@@ -654,6 +725,12 @@ export function IolPriceChart() {
             onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }}
           />
         );
+      })()}
+
+      {contextMenu && contextMenu.kind === "pricerange" && (() => {
+        const r = priceRanges.find((x) => x.id === contextMenu.id);
+        if (!r) return null;
+        return <DrawingContextMenu kind="pricerange" x={contextMenu.x} y={contextMenu.y} color={r.color} onColorChange={(c) => updatePriceRangeColor(r.id, c)} onDelete={() => removePriceRange(r.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
       })()}
 
       {error && !loading && candles.length === 0 && (

@@ -12,7 +12,7 @@ export type IndicatorKey =
   | "macd"
   | "volume";
 
-export type DrawingTool = "cursor" | "hline" | "measure" | "eraser" | "fibonacci" | "fibext";
+export type DrawingTool = "cursor" | "hline" | "measure" | "eraser" | "fibonacci" | "fibext" | "pricerange";
 
 export interface PriceLine {
   id: string;
@@ -25,6 +25,14 @@ export interface FibDrawing {
   id: string;
   symbol: string;
   type: "retracement" | "extension";
+  highPrice: number;
+  lowPrice: number;
+  color?: string;
+}
+
+export interface PriceRangeDrawing {
+  id: string;
+  symbol: string;
   highPrice: number;
   lowPrice: number;
   color?: string;
@@ -89,6 +97,7 @@ interface ChartState {
   tool: DrawingTool;
   priceLines: PriceLine[];
   fibDrawings: FibDrawing[];
+  priceRanges: PriceRangeDrawing[];
   symbolDialogOpen: boolean;
   /** Which indicator's settings dialog is open (null = closed) */
   settingsTarget: IndicatorKey | null;
@@ -112,6 +121,10 @@ interface ChartState {
   clearFibDrawings: (symbol?: string) => void;
   removePriceLine: (id: string) => void;
   updatePriceLineColor: (id: string, color: string) => void;
+  addPriceRange: (d: Omit<PriceRangeDrawing, "id">) => void;
+  removePriceRange: (id: string) => void;
+  updatePriceRangeColor: (id: string, color: string) => void;
+  clearPriceRanges: (symbol?: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
 }
@@ -143,6 +156,7 @@ export const useChartStore = create<ChartState>()(
       tool: "cursor",
       priceLines: [],
       fibDrawings: [],
+      priceRanges: [],
       symbolDialogOpen: false,
       settingsTarget: null,
 
@@ -226,6 +240,24 @@ export const useChartStore = create<ChartState>()(
       updatePriceLineColor: (id, color) =>
         set((state) => ({
           priceLines: state.priceLines.map((p) => p.id === id ? { ...p, color } : p),
+        })),
+      addPriceRange: (d) =>
+        set((state) => ({
+          priceRanges: [...state.priceRanges, {
+            ...d,
+            id: typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          }],
+        })),
+      removePriceRange: (id) =>
+        set((state) => ({ priceRanges: state.priceRanges.filter((r) => r.id !== id) })),
+      updatePriceRangeColor: (id, color) =>
+        set((state) => ({
+          priceRanges: state.priceRanges.map((r) => r.id === id ? { ...r, color } : r),
+        })),
+      clearPriceRanges: (symbol) =>
+        set((state) => ({
+          priceRanges: symbol ? state.priceRanges.filter((r) => r.symbol !== symbol) : [],
         })),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
