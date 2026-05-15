@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AlertChecker } from "@/components/layout/AlertChecker";
+import { SwUnregister } from "@/components/layout/SwUnregister";
 import "./globals.css";
 
 const inter = Inter({
@@ -46,7 +47,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
-        <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>{for(const r of regs)r.unregister();})}` }} />
+        <SwUnregister />
         <TooltipProvider delay={150}>{children}</TooltipProvider>
         <AlertChecker />
       </body>
