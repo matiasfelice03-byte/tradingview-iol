@@ -28,7 +28,7 @@ import { MeasureOverlay } from "./MeasureOverlay";
 import { FibonacciOverlay, computeFibLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
 import { PriceRangeOverlay } from "./PriceRangeOverlay";
 import { DrawingContextMenu } from "./DrawingContextMenu";
-import { AiPanel } from "@/components/ai/AiPanel";
+import { AiPanel, type ChartAction } from "@/components/ai/AiPanel";
 import { AlertsPanel } from "@/components/chart/AlertsPanel";
 import type { Candle } from "@/lib/binance/types";
 
@@ -127,6 +127,7 @@ export function IolPriceChart() {
   const updatePriceRangeColor = useChartStore((s) => s.updatePriceRangeColor);
   const removePriceLine = useChartStore((s) => s.removePriceLine);
   const updatePriceLineColor = useChartStore((s) => s.updatePriceLineColor);
+  const toggleIndicator = useChartStore((s) => s.toggleIndicator);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -814,14 +815,27 @@ export function IolPriceChart() {
       </div>
 
       <AlertsPanel symbol={selectedSymbol} market="argentina" currentPrice={lastPrice?.value ?? 0} />
-      <AiPanel context={{
-        symbol: selectedSymbol,
-        price: lastPrice ? formatARS(lastPrice.value) : "—",
-        pct: lastPrice ? lastPrice.pct.toFixed(2) : "0",
-        market: "argentina",
-        indicators: activeIndicators,
-        candles: recentCandles || undefined,
-      }} />
+      <AiPanel
+        context={{
+          symbol: selectedSymbol,
+          price: lastPrice ? formatARS(lastPrice.value) : "—",
+          pct: lastPrice ? lastPrice.pct.toFixed(2) : "0",
+          market: "argentina",
+          indicators: activeIndicators,
+          candles: recentCandles || undefined,
+        }}
+        onAction={(action: ChartAction) => {
+          if (action.type === "add_hline") {
+            addPriceLine(action.price, selectedSymbol, action.color);
+          } else if (action.type === "add_price_range") {
+            addPriceRange({ symbol: selectedSymbol, highPrice: action.high, lowPrice: action.low, color: action.color });
+          } else if (action.type === "enable_indicator") {
+            if (!indicators[action.name]) toggleIndicator(action.name);
+          } else if (action.type === "disable_indicator") {
+            if (indicators[action.name]) toggleIndicator(action.name);
+          }
+        }}
+      />
     </div>
   );
 }

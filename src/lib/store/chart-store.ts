@@ -113,7 +113,7 @@ interface ChartState {
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
   setTool: (t: DrawingTool) => void;
-  addPriceLine: (price: number, symbol: string) => void;
+  addPriceLine: (price: number, symbol: string, color?: string) => void;
   clearPriceLines: (symbol?: string) => void;
   addFibDrawing: (d: Omit<FibDrawing, "id">) => void;
   removeFibDrawing: (id: string) => void;
@@ -191,7 +191,7 @@ export const useChartStore = create<ChartState>()(
           watchlist: state.watchlist.filter((x) => x !== s),
         })),
       setTool: (tool) => set({ tool }),
-      addPriceLine: (price, symbol) =>
+      addPriceLine: (price, symbol, color) =>
         set((state) => ({
           priceLines: [
             ...state.priceLines,
@@ -202,6 +202,7 @@ export const useChartStore = create<ChartState>()(
                   : `${Date.now()}-${Math.random()}`,
               symbol,
               price,
+              ...(color ? { color } : {}),
             },
           ],
         })),

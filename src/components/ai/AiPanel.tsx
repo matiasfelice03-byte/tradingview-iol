@@ -3,11 +3,19 @@
 import { useState, useRef, useEffect } from "react";
 import { Bot, X, Send, Loader2, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { IndicatorKey } from "@/lib/store/chart-store";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  actions?: ChartAction[];
 }
+
+export type ChartAction =
+  | { type: "add_hline"; price: number; label?: string; color?: string }
+  | { type: "add_price_range"; high: number; low: number; label?: string; color?: string }
+  | { type: "enable_indicator"; name: IndicatorKey }
+  | { type: "disable_indicator"; name: IndicatorKey };
 
 interface ChartContext {
   symbol: string;
@@ -20,24 +28,45 @@ interface ChartContext {
 
 interface Props {
   context: ChartContext;
+  onAction?: (action: ChartAction) => void;
 }
 
 const SUGGESTIONS = [
+  "Marcame los soportes y resistencias clave",
   "Analizá el gráfico y decime si está en tendencia",
-  "¿Cuáles son los soportes y resistencias clave?",
-  "¿Qué dicen los indicadores activos?",
+  "Activá la EMA 200 y decime qué señal da",
   "¿Hay algún patrón de velas o figura chartista?",
 ];
 
 type PanelSize = "small" | "medium" | "large";
-
 const SIZES: Record<PanelSize, { h: number; w: number }> = {
   small:  { h: 260, w: 260 },
   medium: { h: 420, w: 320 },
   large:  { h: 600, w: 420 },
 };
 
-export function AiPanel({ context }: Props) {
+function parseActions(text: string): { clean: string; actions: ChartAction[] } {
+  const match = text.match(/\[ACTIONS\]\s*([\s\S]*?)\s*\[\/ACTIONS\]/);
+  if (!match) return { clean: text, actions: [] };
+  const clean = text.replace(/\[ACTIONS\][\s\S]*?\[\/ACTIONS\]/, "").trimEnd();
+  try {
+    const parsed = JSON.parse(match[1]);
+    return { clean, actions: Array.isArray(parsed.actions) ? parsed.actions : [] };
+  } catch {
+    return { clean, actions: [] };
+  }
+}
+
+function actionLabel(a: ChartAction): string {
+  switch (a.type) {
+    case "add_hline": return `Línea en ${a.price}${a.label ? ` (${a.label})` : ""}`;
+    case "add_price_range": return `Zona ${a.low}–${a.high}${a.label ? ` (${a.label})` : ""}`;
+    case "enable_indicator": return `Activó ${a.name.toUpperCase()}`;
+    case "disable_indicator": return `Desactivó ${a.name.toUpperCase()}`;
+  }
+}
+
+export function AiPanel({ context, onAction }: Props) {
   const [open, setOpen] = useState(false);
   const [size, setSize] = useState<PanelSize>("medium");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -67,23 +96,38 @@ export function AiPanel({ context }: Props) {
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages, context }),
+        body: JSON.stringify({
+          messages: nextMessages.map((m) => ({ role: m.role, content: m.content })),
+          context,
+        }),
       });
       if (!res.ok || !res.body) throw new Error("Error al conectar con la IA");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
+        const { clean } = parseActions(accumulated);
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: accumulated };
+          updated[updated.length - 1] = { role: "assistant", content: clean };
           return updated;
         });
       }
+
+      const { clean, actions } = parseActions(accumulated);
+      if (actions.length > 0 && onAction) {
+        for (const action of actions) onAction(action);
+      }
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: "assistant", content: clean, actions };
+        return updated;
+      });
     } catch (e) {
       setMessages((prev) => {
         const updated = [...prev];
@@ -110,7 +154,6 @@ export function AiPanel({ context }: Props) {
 
   return (
     <>
-      {/* Floating trigger button */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={cn(
@@ -125,13 +168,11 @@ export function AiPanel({ context }: Props) {
         <span className="text-[11px] font-semibold">IA</span>
       </button>
 
-      {/* Panel */}
       {open && (
         <div
           className="pointer-events-auto absolute bottom-0 right-0 z-40 flex flex-col rounded-tl-xl border-l border-t border-tv-border bg-tv-panel shadow-2xl transition-all duration-150"
           style={{ height: h, width: w }}
         >
-          {/* Header */}
           <div className="flex shrink-0 items-center justify-between border-b border-tv-border px-3 py-2">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-tv-blue" />
@@ -149,24 +190,15 @@ export function AiPanel({ context }: Props) {
                   Limpiar
                 </button>
               )}
-              <button
-                onClick={cycleSize}
-                className="rounded p-1 text-tv-text-muted hover:text-tv-text"
-                title={size === "large" ? "Achicar" : "Agrandar"}
-              >
+              <button onClick={cycleSize} className="rounded p-1 text-tv-text-muted hover:text-tv-text">
                 {size === "large" ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </button>
-              <button
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-tv-text-muted hover:text-tv-red"
-                title="Cerrar"
-              >
+              <button onClick={() => setOpen(false)} className="rounded p-1 text-tv-text-muted hover:text-tv-red">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Context chip */}
           <div className="flex shrink-0 items-center gap-1.5 border-b border-tv-border px-3 py-1.5 text-[10px] text-tv-text-muted">
             <span className="font-medium text-tv-text">{context.symbol}</span>
             <span>·</span>
@@ -176,12 +208,11 @@ export function AiPanel({ context }: Props) {
             </span>
           </div>
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
             {messages.length === 0 && (
               <div className="space-y-2">
                 <p className="text-[11px] text-tv-text-muted text-center mt-2">
-                  Preguntame sobre el gráfico de {context.symbol}
+                  Preguntame sobre {context.symbol} — puedo marcar soportes, resistencias e indicadores en el gráfico
                 </p>
                 {SUGGESTIONS.map((s) => (
                   <button
@@ -195,7 +226,7 @@ export function AiPanel({ context }: Props) {
               </div>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+              <div key={i} className={cn("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                 <div
                   className={cn(
                     "max-w-[85%] rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed whitespace-pre-wrap",
@@ -207,19 +238,30 @@ export function AiPanel({ context }: Props) {
                     <span className="inline-block h-3 w-0.5 bg-tv-blue ml-0.5 animate-pulse" />
                   )}
                 </div>
+                {m.actions && m.actions.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1 max-w-[85%]">
+                    {m.actions.map((a, ai) => (
+                      <span
+                        key={ai}
+                        className="rounded bg-tv-blue/10 px-1.5 py-0.5 text-[10px] text-tv-blue border border-tv-blue/20"
+                      >
+                        ✓ {actionLabel(a)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="shrink-0 border-t border-tv-border p-2 flex items-center gap-2">
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Preguntá algo..."
+              placeholder="Preguntá algo o pedile que marque niveles..."
               disabled={streaming}
               className="flex-1 rounded bg-tv-bg border border-tv-border px-2.5 py-1.5 text-[11px] text-tv-text placeholder:text-tv-text-muted focus:outline-none focus:border-tv-blue disabled:opacity-50"
             />

@@ -28,7 +28,7 @@ export function useIolHistorical(
 
     const iolRange = TF_TO_IOL_RANGE[timeframe];
     const load = iolRange
-      ? fetchIolHistorical(simbolo, iolRange)
+      ? fetchIolHistorical(simbolo, iolRange).catch(() => fetchYahooCandles(simbolo + ".BA", timeframe))
       : fetchYahooCandles(simbolo + ".BA", timeframe);
 
     load
