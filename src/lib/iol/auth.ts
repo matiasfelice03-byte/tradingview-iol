@@ -116,6 +116,12 @@ class IolAuthManager {
     }
   }
 
+  clearTokens(): void {
+    localStorage.removeItem(STORAGE_KEYS.accessToken);
+    localStorage.removeItem(STORAGE_KEYS.refreshToken);
+    localStorage.removeItem(STORAGE_KEYS.expiresAt);
+  }
+
   private storeTokens(data: IolTokenResponse): void {
     const expiresAt = Date.now() + data.expires_in * 1000;
     localStorage.setItem(STORAGE_KEYS.accessToken, data.access_token);

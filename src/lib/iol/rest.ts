@@ -46,6 +46,7 @@ async function iolFetch(path: string, options: RequestInit = {}): Promise<Respon
     const body = await clone.json();
     const msg: string = body?.message ?? body?.Message ?? "";
     if (msg && (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("authorization"))) {
+      iolAuth.clearTokens(); // Bad token — clear so next call re-authenticates with stored credentials
       throw new Error(`IOL sesión inválida: ${msg} — volvé a iniciar sesión`);
     }
   } catch (e) {

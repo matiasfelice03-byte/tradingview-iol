@@ -421,11 +421,23 @@ export function IolPriceChart() {
   // Load historical candles
   useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return;
-    const valid = candles.filter((c) => c.open > 0 && c.close > 0 && c.high > 0 && c.low > 0 && isFinite(c.open) && isFinite(c.close));
+    const valid = candles.filter((c) =>
+      c.open > 0 && c.close > 0 && c.high > 0 && c.low > 0 &&
+      isFinite(c.open) && isFinite(c.close) && isFinite(c.high) && isFinite(c.low) &&
+      c.time != null && isFinite(Number(c.time))
+    );
+    if (valid.length === 0) return;
     candlesRef.current = valid;
-    candleSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
+    try {
+      candleSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
+    } catch (e) {
+      console.error("setData error:", e);
+      return;
+    }
     if (volumeSeriesRef.current) {
-      volumeSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume ?? 0, color: c.close >= c.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66` })));
+      try {
+        volumeSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume ?? 0, color: c.close >= c.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66` })));
+      } catch {}
     }
     updateEMAs();
     updateRSI();
@@ -433,8 +445,8 @@ export function IolPriceChart() {
     chartRef.current?.timeScale().fitContent();
     dataLoadedRef.current = true;
     requestAnimationFrame(() => recomputePaneOffsets());
-    const last = candles[candles.length - 1];
-    const prev = candles[candles.length - 2] ?? last;
+    const last = valid[valid.length - 1];
+    const prev = valid[valid.length - 2] ?? last;
     if (last) setLastPrice({ value: last.close, pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100 });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
@@ -452,14 +464,18 @@ export function IolPriceChart() {
     if (typeof price !== "number" || !isFinite(price) || price <= 0) return;
     const last = candlesRef.current[candlesRef.current.length - 1];
     if (!last) return;
-    candleSeriesRef.current.update({
-      time: last.time as UTCTimestamp,
-      open: last.open,
-      high: Math.max(last.high, price),
-      low: Math.min(last.low, price),
-      close: price,
-    });
-    setLastPrice({ value: price, pct: quote.variacion ?? 0 });
+    try {
+      candleSeriesRef.current.update({
+        time: last.time as UTCTimestamp,
+        open: last.open,
+        high: Math.max(last.high, price),
+        low: Math.min(last.low, price),
+        close: price,
+      });
+      setLastPrice({ value: price, pct: quote.variacion ?? 0 });
+    } catch (e) {
+      console.error("chart update error:", e);
+    }
   }, [quote]);
 
   // Volume indicator
