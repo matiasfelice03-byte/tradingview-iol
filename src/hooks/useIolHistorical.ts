@@ -3,9 +3,9 @@ import { fetchYahooCandles, type IolTimeframe } from "@/lib/yahoo/rest";
 import { fetchIolHistorical, type IolCandle, type IolDateRange } from "@/lib/iol/rest";
 
 const TF_TO_IOL_RANGE: Partial<Record<IolTimeframe, IolDateRange>> = {
-  "1D": "5A",
-  "1S": "5A",
-  "1M": "5A",
+  "1D": "1A",
+  "1S": "1A",
+  "1M": "1A",
 };
 
 export function useIolHistorical(

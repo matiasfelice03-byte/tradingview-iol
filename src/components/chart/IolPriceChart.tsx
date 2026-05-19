@@ -421,10 +421,11 @@ export function IolPriceChart() {
   // Load historical candles
   useEffect(() => {
     if (!candleSeriesRef.current || candles.length === 0) return;
-    candlesRef.current = candles;
-    candleSeriesRef.current.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
+    const valid = candles.filter((c) => c.open > 0 && c.close > 0 && c.high > 0 && c.low > 0 && isFinite(c.open) && isFinite(c.close));
+    candlesRef.current = valid;
+    candleSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
     if (volumeSeriesRef.current) {
-      volumeSeriesRef.current.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66` })));
+      volumeSeriesRef.current.setData(valid.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume ?? 0, color: c.close >= c.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66` })));
     }
     updateEMAs();
     updateRSI();

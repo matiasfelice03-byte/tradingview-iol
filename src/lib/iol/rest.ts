@@ -100,6 +100,7 @@ export async function fetchIolHistorical(
   );
   const data: IolHistoricalBar[] = await res.json();
   return data
+    .filter((bar) => bar.apertura != null && bar.cierre != null && bar.maximo != null && bar.minimo != null && bar.cierre > 0)
     .map((bar) => {
       const dateOnly = bar.fechaHora.substring(0, 10); // "YYYY-MM-DD"
       const time = (new Date(dateOnly + "T00:00:00Z").getTime() / 1000) as UTCTimestamp;
@@ -109,7 +110,7 @@ export async function fetchIolHistorical(
         high: bar.maximo,
         low: bar.minimo,
         close: bar.cierre,
-        volume: bar.volumen,
+        volume: bar.volumen ?? 0,
       };
     })
     .sort((a, b) => a.time - b.time);
