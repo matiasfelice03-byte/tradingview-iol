@@ -40,12 +40,28 @@ async function iolFetch(path: string, options: RequestInit = {}): Promise<Respon
         : "";
     throw new Error(`IOL ${res.status}${detail ? ": " + detail : ""}${hint}`);
   }
+  // IOL sometimes returns HTTP 200 with an auth-denied JSON instead of a real 401
+  const clone = res.clone();
+  try {
+    const body = await clone.json();
+    const msg: string = body?.message ?? body?.Message ?? "";
+    if (msg && (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("authorization"))) {
+      throw new Error(`IOL sesión inválida: ${msg} — volvé a iniciar sesión`);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("IOL sesión")) throw e;
+    // Body isn't JSON or has no auth error message — continue normally
+  }
   return res;
 }
 
 export async function fetchIolQuote(simbolo: string): Promise<IolQuote> {
   const res = await iolFetch(`/bCBA/Titulos/${encodeURIComponent(simbolo)}/Cotizacion`);
-  return res.json();
+  const data = await res.json();
+  if (typeof data?.ultimoPrecio !== "number") {
+    throw new Error(data?.message ?? "IOL: respuesta de cotización inválida");
+  }
+  return data as IolQuote;
 }
 
 export interface IolCandle {
@@ -98,7 +114,8 @@ export async function fetchIolHistorical(
   const res = await iolFetch(
     `/bCBA/Titulos/${encodeURIComponent(simbolo)}/Cotizacion/seriehistorica/${from}/${to}/${ajustada}`,
   );
-  const data: IolHistoricalBar[] = await res.json();
+  const raw = await res.json();
+  const data: IolHistoricalBar[] = Array.isArray(raw) ? raw : [];
   return data
     .filter((bar) => bar.apertura != null && bar.cierre != null && bar.maximo != null && bar.minimo != null && bar.cierre > 0)
     .map((bar) => {

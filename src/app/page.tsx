@@ -8,6 +8,7 @@ import { IolLeftSidebar } from "@/components/layout/IolLeftSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { PriceChart } from "@/components/chart/PriceChart";
 import { IolPriceChart } from "@/components/chart/IolPriceChart";
+import { ChartErrorBoundary } from "@/components/chart/ChartErrorBoundary";
 import { OrderPanel } from "@/components/iol/OrderPanel";
 import { Watchlist } from "@/components/watchlist/Watchlist";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
@@ -95,7 +96,7 @@ export default function HomePage() {
             mobileTab === "watchlist" && "hidden md:flex",
           )}>
             {isCrypto && <PriceChart symbol={symbol} timeframe={timeframe} />}
-            {isArgentina && <IolPriceChart />}
+            {isArgentina && <ChartErrorBoundary><IolPriceChart /></ChartErrorBoundary>}
           </div>
 
           {/* Order panel: desktop always / mobile only on operar tab */}

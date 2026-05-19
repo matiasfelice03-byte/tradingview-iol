@@ -439,19 +439,27 @@ export function IolPriceChart() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
 
+  // Reset when symbol changes to prevent stale data racing with new quote
+  useEffect(() => {
+    dataLoadedRef.current = false;
+    candlesRef.current = [];
+  }, [selectedSymbol]);
+
   // Update last candle with live quote
   useEffect(() => {
     if (!quote || !candleSeriesRef.current || !dataLoadedRef.current) return;
+    const price = quote.ultimoPrecio;
+    if (typeof price !== "number" || !isFinite(price) || price <= 0) return;
     const last = candlesRef.current[candlesRef.current.length - 1];
     if (!last) return;
     candleSeriesRef.current.update({
       time: last.time as UTCTimestamp,
       open: last.open,
-      high: Math.max(last.high, quote.ultimoPrecio),
-      low: Math.min(last.low, quote.ultimoPrecio),
-      close: quote.ultimoPrecio,
+      high: Math.max(last.high, price),
+      low: Math.min(last.low, price),
+      close: price,
     });
-    setLastPrice({ value: quote.ultimoPrecio, pct: quote.variacion });
+    setLastPrice({ value: price, pct: quote.variacion ?? 0 });
   }, [quote]);
 
   // Volume indicator
@@ -795,7 +803,7 @@ export function IolPriceChart() {
       {/* RSI pane label */}
       {indicators.rsi && paneOffsets[rsiPaneIdx] && (
         <div style={{ top: paneOffsets[rsiPaneIdx].top + 6, left: 12 }} className="pointer-events-none absolute z-10">
-          <IndicatorPill name={`RSI ${config.rsi}`} value={lastValues.rsi !== undefined ? lastValues.rsi.toFixed(2) : undefined} color={INDICATOR_COLORS.rsi} hidden={hidden.rsi} onToggleHide={() => toggleHidden("rsi")} onSettings={() => setSettingsTarget("rsi")} onRemove={() => removeIndicator("rsi")} />
+          <IndicatorPill name={`RSI ${config.rsi}`} value={lastValues.rsi !== undefined && !isNaN(lastValues.rsi) ? lastValues.rsi.toFixed(2) : undefined} color={INDICATOR_COLORS.rsi} hidden={hidden.rsi} onToggleHide={() => toggleHidden("rsi")} onSettings={() => setSettingsTarget("rsi")} onRemove={() => removeIndicator("rsi")} />
         </div>
       )}
 

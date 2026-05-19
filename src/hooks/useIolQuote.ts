@@ -15,6 +15,7 @@ export function useIolQuote(simbolo: string | null): {
     if (!simbolo) return;
     let cancelled = false;
     setLoading(true);
+    setQuote(null);
 
     const poll = async () => {
       try {
