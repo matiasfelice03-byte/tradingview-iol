@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS settings (
   key text PRIMARY KEY,
   value text NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_watchlists (
+  iol_username text PRIMARY KEY,
+  data jsonb NOT NULL DEFAULT '[]',
+  updated_at timestamptz DEFAULT now()
+);
 `;
 
 export async function GET(req: NextRequest) {

@@ -14,8 +14,14 @@ interface Message {
 export type ChartAction =
   | { type: "add_hline"; price: number; label?: string; color?: string }
   | { type: "add_price_range"; high: number; low: number; label?: string; color?: string }
+  | { type: "add_fibonacci"; high?: number; low?: number; pointA?: number; pointB?: number; pointC?: number; kind?: "retracement" | "extension"; color?: string }
+  | { type: "add_trendline"; points: { date: string; price: number }[]; color?: string }
+  | { type: "project_path"; points: { weeks: number; price: number }[]; color?: string }
   | { type: "enable_indicator"; name: IndicatorKey }
-  | { type: "disable_indicator"; name: IndicatorKey };
+  | { type: "disable_indicator"; name: IndicatorKey }
+  | { type: "clear_drawings"; kind?: "hlines" | "ranges" | "fibs" | "trends" | "all" }
+  | { type: "set_symbol"; symbol: string }
+  | { type: "set_timeframe"; timeframe: string };
 
 interface ChartContext {
   symbol: string;
@@ -46,23 +52,36 @@ const SIZES: Record<PanelSize, { h: number; w: number }> = {
 };
 
 function parseActions(text: string): { clean: string; actions: ChartAction[] } {
-  const match = text.match(/\[ACTIONS\]\s*([\s\S]*?)\s*\[\/ACTIONS\]/);
-  if (!match) return { clean: text, actions: [] };
-  const clean = text.replace(/\[ACTIONS\][\s\S]*?\[\/ACTIONS\]/, "").trimEnd();
-  try {
-    const parsed = JSON.parse(match[1]);
-    return { clean, actions: Array.isArray(parsed.actions) ? parsed.actions : [] };
-  } catch {
-    return { clean, actions: [] };
+  const actions: ChartAction[] = [];
+  // La IA puede emitir más de un bloque [ACTIONS]: los procesamos todos.
+  const re = /\[ACTIONS\]\s*([\s\S]*?)\s*\[\/ACTIONS\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(m[1]);
+      if (Array.isArray(parsed.actions)) actions.push(...parsed.actions);
+    } catch {
+      /* bloque mal formado — lo ignoramos */
+    }
   }
+  let clean = text.replace(/\[ACTIONS\][\s\S]*?\[\/ACTIONS\]/g, "");
+  // Oculta un bloque sin cerrar todavía mientras llega el stream.
+  clean = clean.replace(/\[ACTIONS\][\s\S]*$/, "");
+  return { clean: clean.trimEnd(), actions };
 }
 
 function actionLabel(a: ChartAction): string {
   switch (a.type) {
     case "add_hline": return `Línea en ${a.price}${a.label ? ` (${a.label})` : ""}`;
     case "add_price_range": return `Zona ${a.low}–${a.high}${a.label ? ` (${a.label})` : ""}`;
+    case "add_fibonacci": return a.kind === "extension" ? "Fibonacci extensión (3 puntos)" : "Fibonacci retroceso";
+    case "add_trendline": return `Línea de tendencia (${a.points?.length ?? 0} puntos)`;
+    case "project_path": return `Movimiento proyectado (${a.points?.length ?? 0} tramos)`;
     case "enable_indicator": return `Activó ${a.name.toUpperCase()}`;
     case "disable_indicator": return `Desactivó ${a.name.toUpperCase()}`;
+    case "clear_drawings": return `Limpió ${a.kind === "hlines" ? "líneas" : a.kind === "ranges" ? "zonas" : a.kind === "fibs" ? "fibonaccis" : a.kind === "trends" ? "tendencias" : "dibujos"}`;
+    case "set_symbol": return `Cambió a ${a.symbol}`;
+    case "set_timeframe": return `Timeframe → ${a.timeframe}`;
   }
 }
 
@@ -101,7 +120,15 @@ export function AiPanel({ context, onAction }: Props) {
           context,
         }),
       });
-      if (!res.ok || !res.body) throw new Error("Error al conectar con la IA");
+      if (!res.ok) {
+        let msg = "Error al conectar con la IA";
+        try {
+          const err = await res.json();
+          if (err?.error) msg = err.error;
+        } catch { /* respuesta sin JSON */ }
+        throw new Error(msg);
+      }
+      if (!res.body) throw new Error("Error al conectar con la IA");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -170,13 +197,16 @@ export function AiPanel({ context, onAction }: Props) {
 
       {open && (
         <div
-          className="pointer-events-auto absolute bottom-0 right-0 z-40 flex flex-col rounded-tl-xl border-l border-t border-tv-border bg-tv-panel shadow-2xl transition-all duration-150"
-          style={{ height: h, width: w }}
+          className="pointer-events-auto absolute bottom-0 right-0 z-40 flex flex-col rounded-tl-xl border-l border-t border-tv-border bg-tv-panel shadow-2xl transition-all duration-150 max-w-[100vw] max-h-[80vh]"
+          style={{
+            height: `min(${h}px, 80vh)`,
+            width: `min(${w}px, 100vw)`,
+          }}
         >
           <div className="flex shrink-0 items-center justify-between border-b border-tv-border px-3 py-2">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-tv-blue" />
-              <span className="text-[12px] font-semibold text-tv-text">Llama 3.3</span>
+              <span className="text-[12px] font-semibold text-tv-text">Gemini 2.5 Flash</span>
               <span className="rounded bg-tv-blue/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tv-blue">
                 Beta
               </span>

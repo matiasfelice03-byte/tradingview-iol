@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AlertChecker } from "@/components/layout/AlertChecker";
+import { WatchlistSync } from "@/components/layout/WatchlistSync";
 import { SwUnregister } from "@/components/layout/SwUnregister";
 import "./globals.css";
 
@@ -32,6 +33,15 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#131722",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -43,13 +53,13 @@ export default function RootLayout({
       className={`dark ${inter.variable} ${jetbrains.variable} h-full antialiased`}
     >
       <head>
-        <meta name="theme-color" content="#131722" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icon.svg" />
       </head>
-      <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
+      <body className="h-full overflow-hidden bg-tv-bg text-tv-text overscroll-none [touch-action:manipulation]">
         <SwUnregister />
         <TooltipProvider delay={150}>{children}</TooltipProvider>
         <AlertChecker />
+        <WatchlistSync />
       </body>
     </html>
   );

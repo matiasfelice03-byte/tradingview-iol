@@ -9,6 +9,19 @@ import type {
 
 const BASE = "/api/iol/api/v2";
 
+/**
+ * Algunos tickers BYMA difieren del nombre común. Ej: la acción local de YPF
+ * cotiza como "YPFD" ("YPF" es el ADR de NYSE y da 404 en IOL/Yahoo .BA).
+ */
+const IOL_SYMBOL_ALIASES: Record<string, string> = {
+  YPF: "YPFD",
+};
+
+/** Convierte un símbolo a su ticker real en BYMA (IOL/Yahoo). */
+export function normalizeIolSymbol(simbolo: string): string {
+  return IOL_SYMBOL_ALIASES[simbolo.toUpperCase()] ?? simbolo;
+}
+
 async function iolFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const token = await iolAuth.getAccessToken();
   const isGet = !options.method || options.method === "GET";
@@ -57,7 +70,8 @@ async function iolFetch(path: string, options: RequestInit = {}): Promise<Respon
 }
 
 export async function fetchIolQuote(simbolo: string): Promise<IolQuote> {
-  const res = await iolFetch(`/bCBA/Titulos/${encodeURIComponent(simbolo)}/Cotizacion`);
+  const sym = normalizeIolSymbol(simbolo);
+  const res = await iolFetch(`/bCBA/Titulos/${encodeURIComponent(sym)}/Cotizacion`);
   const data = await res.json();
   if (typeof data?.ultimoPrecio !== "number") {
     throw new Error(data?.message ?? "IOL: respuesta de cotización inválida");
@@ -112,13 +126,14 @@ export async function fetchIolHistorical(
   ajustada: "ajustada" | "sinAjustar" = "ajustada",
 ): Promise<IolCandle[]> {
   const { from, to } = rangeToDates(range);
+  const sym = normalizeIolSymbol(simbolo);
   const res = await iolFetch(
-    `/bCBA/Titulos/${encodeURIComponent(simbolo)}/Cotizacion/seriehistorica/${from}/${to}/${ajustada}`,
+    `/bCBA/Titulos/${encodeURIComponent(sym)}/Cotizacion/seriehistorica/${from}/${to}/${ajustada}`,
   );
   const raw = await res.json();
   const data: IolHistoricalBar[] = Array.isArray(raw) ? raw : [];
-  return data
-    .filter((bar) => bar.apertura != null && bar.cierre != null && bar.maximo != null && bar.minimo != null && bar.cierre > 0)
+  const mapped = data
+    .filter((bar) => bar.apertura != null && bar.ultimoPrecio != null && bar.maximo != null && bar.minimo != null && bar.ultimoPrecio > 0)
     .map((bar) => {
       const dateOnly = bar.fechaHora.substring(0, 10); // "YYYY-MM-DD"
       const time = (new Date(dateOnly + "T00:00:00Z").getTime() / 1000) as UTCTimestamp;
@@ -127,25 +142,127 @@ export async function fetchIolHistorical(
         open: bar.apertura,
         high: bar.maximo,
         low: bar.minimo,
-        close: bar.cierre,
-        volume: bar.volumen ?? 0,
+        close: bar.ultimoPrecio,
+        volume: bar.volumenNominal ?? 0,
       };
     })
     .sort((a, b) => a.time - b.time);
+  // Dedupe by timestamp — IOL can return multiple intraday bars collapsing to the same day.
+  // Aggregate them: open from first, close from last, high/low extreme, sum volumes.
+  const byTime = new Map<number, IolCandle>();
+  for (const c of mapped) {
+    const existing = byTime.get(c.time as number);
+    if (!existing) {
+      byTime.set(c.time as number, c);
+    } else {
+      existing.high = Math.max(existing.high, c.high);
+      existing.low = Math.min(existing.low, c.low);
+      existing.close = c.close;
+      existing.volume += c.volume;
+    }
+  }
+  return Array.from(byTime.values());
 }
 
-export async function placeIolBuyOrder(order: IolOrderRequest): Promise<void> {
-  await iolFetch("/operar/Comprar", {
-    method: "POST",
-    body: JSON.stringify(order),
-  });
+export interface IolOrderResult {
+  numeroOperacion?: number;
 }
 
-export async function placeIolSellOrder(order: IolOrderRequest): Promise<void> {
-  await iolFetch("/operar/Vender", {
-    method: "POST",
-    body: JSON.stringify(order),
-  });
+/** IOL devuelve HTTP 200 incluso cuando la orden falla — hay que mirar el body. */
+interface IolOrderResponse {
+  ok?: boolean;
+  messages?: Array<{ titulo?: string; descripcion?: string; tipo?: string }>;
+  numeroOperacion?: number;
+}
+
+function parseIolOrderBody(body: IolOrderResponse): IolOrderResult {
+  console.log("[orden] respuesta IOL:", body);
+  const msgs = (body?.messages ?? [])
+    .map((m) => [m.titulo, m.descripcion].filter(Boolean).join(": "))
+    .filter(Boolean)
+    .join(" | ");
+  const raw = JSON.stringify(body);
+  // ok === false => orden rechazada. Si ok es undefined, asumimos éxito solo si hay numeroOperacion.
+  if (body?.ok === false) {
+    throw new Error(`IOL rechazó la orden: ${msgs || raw}`);
+  }
+  if (body?.ok !== true && !body?.numeroOperacion) {
+    throw new Error(`IOL no confirmó la orden: ${msgs || raw}`);
+  }
+  return { numeroOperacion: body?.numeroOperacion };
+}
+
+/** Fecha de validez de la orden (ISO). IOL requiere este campo o rechaza la orden. */
+function orderValidez(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 7); // válida 7 días
+  d.setHours(23, 59, 0, 0);
+  return d.toISOString();
+}
+
+async function placeOrder(action: "comprar" | "vender", order: IolOrderRequest): Promise<IolOrderResult> {
+  const token = await iolAuth.getAccessToken();
+  const normalizedOrder = {
+    ...order,
+    simbolo: normalizeIolSymbol(order.simbolo),
+    validez: orderValidez(),
+  };
+  const path = action === "comprar" ? "Comprar" : "Vender";
+
+  // IOL bloquea conexiones desde IPs de servidores en EE.UU. (Vercel) para el endpoint de trading.
+  // Llamamos directo desde el browser (IP argentina) — igual que la app web de IOL.
+  let res: Response;
+  try {
+    res = await fetch(`https://api.invertironline.com/api/v2/operar/${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(normalizedOrder),
+    });
+  } catch {
+    // CORS u otro error de red — fallback al route server-side
+    const fallback = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, token, order: normalizedOrder }),
+    });
+    const data = await fallback.json() as { ok?: boolean; error?: string; data?: IolOrderResponse };
+    if (!fallback.ok || !data.ok) throw new Error(data.error ?? `Error ${fallback.status}`);
+    return parseIolOrderBody(data.data ?? {});
+  }
+
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body?.message ?? body?.Message ?? body?.error ?? JSON.stringify(body);
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    const hint =
+      res.status === 500
+        ? " (precio fuera de rango, mercado cerrado o saldo insuficiente)"
+        : res.status === 401
+        ? " (sesión expirada — volvé a iniciar sesión)"
+        : res.status === 503
+        ? " (servidor de IOL no disponible — intentá de nuevo)"
+        : "";
+    throw new Error(`IOL ${res.status}${detail ? ": " + detail : ""}${hint}`);
+  }
+
+  const body = (await res.json().catch(() => ({}))) as IolOrderResponse;
+  return parseIolOrderBody(body);
+}
+
+export async function placeIolBuyOrder(order: IolOrderRequest): Promise<IolOrderResult> {
+  return placeOrder("comprar", order);
+}
+
+export async function placeIolSellOrder(order: IolOrderRequest): Promise<IolOrderResult> {
+  return placeOrder("vender", order);
 }
 
 export async function fetchIolPortfolio(): Promise<IolPortfolioItem[]> {

@@ -32,7 +32,11 @@ interface PriceRangeProps extends BaseProps {
   kind: "pricerange";
 }
 
-type Props = FibProps | HlineProps | PriceRangeProps;
+interface TrendLineProps extends BaseProps {
+  kind: "trendline";
+}
+
+type Props = FibProps | HlineProps | PriceRangeProps | TrendLineProps;
 
 export function DrawingContextMenu(props: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -63,7 +67,13 @@ export function DrawingContextMenu(props: Props) {
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold text-tv-text">
-          {props.kind === "fib" ? "Fibonacci" : props.kind === "pricerange" ? "Zona de precio" : "Línea horizontal"}
+          {props.kind === "fib"
+            ? "Fibonacci"
+            : props.kind === "pricerange"
+            ? "Zona de precio"
+            : props.kind === "trendline"
+            ? "Línea de tendencia"
+            : "Línea horizontal"}
         </span>
         <button onClick={props.onClose} className="rounded p-0.5 text-tv-text-muted hover:text-tv-text">
           <X className="h-3 w-3" />

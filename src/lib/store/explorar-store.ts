@@ -40,8 +40,12 @@ interface ExplorarState {
   watchlists: Watchlist[];
   annotations: Annotation[];
   alerts: PriceAlert[];
+  /** Currently selected custom list id (null = default market list) */
+  selectedListId: string | null;
 
+  setSelectedListId: (id: string | null) => void;
   addWatchlist: (name: string) => void;
+  setWatchlists: (lists: Watchlist[]) => void;
   removeWatchlist: (id: string) => void;
   renameWatchlist: (id: string, name: string) => void;
   addToWatchlist: (listId: string, item: WatchlistItem) => void;
@@ -61,6 +65,9 @@ export const useExplorarStore = create<ExplorarState>()(
       watchlists: [],
       annotations: [],
       alerts: [],
+      selectedListId: null,
+
+      setSelectedListId: (selectedListId) => set({ selectedListId }),
 
       addWatchlist: (name) =>
         set((s) => ({
@@ -70,9 +77,12 @@ export const useExplorarStore = create<ExplorarState>()(
           ],
         })),
 
+      setWatchlists: (lists) => set({ watchlists: lists }),
+
       removeWatchlist: (id) =>
         set((s) => ({
           watchlists: s.watchlists.filter((w) => w.id !== id),
+          selectedListId: s.selectedListId === id ? null : s.selectedListId,
         })),
 
       renameWatchlist: (id, name) =>

@@ -45,6 +45,28 @@ export function computeFibLevels(
   return result;
 }
 
+/**
+ * Extensión de Fibonacci de 3 puntos (trend-based):
+ * A = inicio del impulso, B = fin del impulso, C = fin del retroceso.
+ * Los niveles se proyectan desde C: price = C + (B - A) * ratio.
+ */
+export function computeFibExtensionLevels(
+  a: number,
+  b: number,
+  c: number,
+  priceToCoord: (price: number) => number | null,
+  tintColor?: string,
+): FibLevelRendered[] {
+  const impulse = b - a;
+  const result: FibLevelRendered[] = [];
+  for (const l of EXTENSION_LEVELS) {
+    const price = c + impulse * l.ratio;
+    const y = priceToCoord(price);
+    if (y !== null) result.push({ ...l, color: tintColor ?? l.color, price, y });
+  }
+  return result;
+}
+
 interface Props {
   levels: FibLevelRendered[];
   chartWidth: number;

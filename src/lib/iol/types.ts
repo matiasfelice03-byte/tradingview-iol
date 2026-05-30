@@ -29,8 +29,8 @@ export interface IolHistoricalBar {
   apertura: number;
   maximo: number;
   minimo: number;
-  cierre: number;
-  volumen: number;
+  ultimoPrecio: number;
+  volumenNominal: number;
   fechaHora: string;
 }
 
@@ -41,9 +41,11 @@ export type IolTipoOrden = "precioLimite" | "precioMercado";
 export interface IolOrderRequest {
   mercado: IolMercado;
   simbolo: string;
-  cantidad: number;
-  precio: number;
+  cantidad?: number;   // precioLimite
+  precio?: number;     // precioLimite
+  monto?: number;      // precioMercado (total ARS a invertir)
   plazo: IolPlazo;
+  validez?: string;    // ISO date — lo agrega placeOrder automáticamente
   tipoOrden: IolTipoOrden;
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MousePointer2, Minus, Ruler, Trash2, TrendingUp, Magnet, RectangleHorizontal } from "lucide-react";
+import { MousePointer2, Minus, Ruler, Trash2, TrendingUp, Magnet, RectangleHorizontal, Slash } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
@@ -14,11 +14,16 @@ export function LeftSidebar() {
   const clearPriceLines = useChartStore((s) => s.clearPriceLines);
   const clearFibDrawings = useChartStore((s) => s.clearFibDrawings);
   const clearPriceRanges = useChartStore((s) => s.clearPriceRanges);
+  const clearTrendLines = useChartStore((s) => s.clearTrendLines);
   const symbol = useChartStore((s) => s.symbol);
 
   const [fibOpen, setFibOpen] = useState(false);
   const fibRef = useRef<HTMLDivElement>(null);
   const isFibActive = tool === "fibonacci" || tool === "fibext";
+
+  const [linesOpen, setLinesOpen] = useState(false);
+  const linesRef = useRef<HTMLDivElement>(null);
+  const isLinesActive = tool === "hline" || tool === "trendline";
 
   useEffect(() => {
     if (!fibOpen) return;
@@ -28,6 +33,15 @@ export function LeftSidebar() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [fibOpen]);
+
+  useEffect(() => {
+    if (!linesOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (linesRef.current && !linesRef.current.contains(e.target as Node)) setLinesOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [linesOpen]);
 
   return (
     <aside className="flex w-11 flex-col items-center gap-0.5 border-r border-tv-border bg-tv-panel py-1.5">
@@ -42,19 +56,44 @@ export function LeftSidebar() {
         <TooltipContent side="right" className="text-xs"><div className="font-medium">Cursor</div></TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger
-          onClick={() => setTool("hline")}
-          aria-label="Línea horizontal"
-          className={cn("flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover", tool === "hline" ? "bg-tv-blue/15 text-tv-blue" : "text-tv-text-muted hover:text-tv-text")}
-        >
-          <Minus className="h-4 w-4" />
-        </TooltipTrigger>
-        <TooltipContent side="right" className="text-xs">
-          <div className="font-medium">Línea horizontal</div>
-          <div className="mt-0.5 text-[10px] text-tv-text-muted">Click en el chart para marcar un precio</div>
-        </TooltipContent>
-      </Tooltip>
+      {/* Líneas dropdown */}
+      <div ref={linesRef} className="relative">
+        <Tooltip>
+          <TooltipTrigger
+            onClick={() => setLinesOpen((v) => !v)}
+            aria-label="Líneas de tendencia"
+            className={cn("flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover", isLinesActive || linesOpen ? "bg-tv-blue/15 text-tv-blue" : "text-tv-text-muted hover:text-tv-text")}
+          >
+            <Slash className="h-4 w-4" />
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">
+            <div className="font-medium">Líneas de tendencia</div>
+            <div className="mt-0.5 text-[10px] text-tv-text-muted">Horizontal o tendencia (varios puntos)</div>
+          </TooltipContent>
+        </Tooltip>
+
+        {linesOpen && (
+          <div className="absolute left-full top-0 ml-1.5 z-50 w-52 rounded border border-tv-border bg-tv-panel shadow-lg overflow-hidden">
+            <button
+              onClick={() => { setTool("hline"); setLinesOpen(false); }}
+              className={cn("flex w-full items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors hover:bg-tv-panel-hover", tool === "hline" ? "text-tv-blue" : "text-tv-text")}
+            >
+              <Minus className="h-3.5 w-3.5 shrink-0" />
+              Línea horizontal
+            </button>
+            <button
+              onClick={() => { setTool("trendline"); setLinesOpen(false); }}
+              className={cn("flex w-full items-center gap-2 px-3 py-2 text-[11px] font-medium transition-colors hover:bg-tv-panel-hover", tool === "trendline" ? "text-tv-blue" : "text-tv-text")}
+            >
+              <Slash className="h-3.5 w-3.5 shrink-0" />
+              <span className="flex flex-col items-start">
+                Línea de tendencia
+                <span className="text-[9px] text-tv-text-muted">Click por punto · botón Finalizar</span>
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <Tooltip>
         <TooltipTrigger
@@ -138,7 +177,7 @@ export function LeftSidebar() {
 
       <Tooltip>
         <TooltipTrigger
-          onClick={() => { clearPriceLines(symbol); clearFibDrawings(symbol); clearPriceRanges(symbol); }}
+          onClick={() => { clearPriceLines(symbol); clearFibDrawings(symbol); clearPriceRanges(symbol); clearTrendLines(symbol); }}
           aria-label="Borrar dibujos"
           className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
         >

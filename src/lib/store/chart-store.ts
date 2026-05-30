@@ -12,13 +12,14 @@ export type IndicatorKey =
   | "macd"
   | "volume";
 
-export type DrawingTool = "cursor" | "hline" | "measure" | "eraser" | "fibonacci" | "fibext" | "pricerange";
+export type DrawingTool = "cursor" | "hline" | "measure" | "eraser" | "fibonacci" | "fibext" | "pricerange" | "trendline";
 
 export interface PriceLine {
   id: string;
   symbol: string;
   price: number;
   color?: string;
+  label?: string;
 }
 
 export interface FibDrawing {
@@ -27,6 +28,10 @@ export interface FibDrawing {
   type: "retracement" | "extension";
   highPrice: number;
   lowPrice: number;
+  // Extensión de 3 puntos: A = inicio del impulso, B = fin del impulso, C = fin del retroceso.
+  pointA?: number;
+  pointB?: number;
+  pointC?: number;
   color?: string;
 }
 
@@ -35,6 +40,18 @@ export interface PriceRangeDrawing {
   symbol: string;
   highPrice: number;
   lowPrice: number;
+  color?: string;
+}
+
+export interface TrendLinePoint {
+  time: number;
+  price: number;
+}
+
+export interface TrendLineDrawing {
+  id: string;
+  symbol: string;
+  points: TrendLinePoint[];
   color?: string;
 }
 
@@ -98,6 +115,7 @@ interface ChartState {
   priceLines: PriceLine[];
   fibDrawings: FibDrawing[];
   priceRanges: PriceRangeDrawing[];
+  trendLines: TrendLineDrawing[];
   symbolDialogOpen: boolean;
   /** Which indicator's settings dialog is open (null = closed) */
   settingsTarget: IndicatorKey | null;
@@ -113,7 +131,7 @@ interface ChartState {
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
   setTool: (t: DrawingTool) => void;
-  addPriceLine: (price: number, symbol: string, color?: string) => void;
+  addPriceLine: (price: number, symbol: string, color?: string, label?: string) => void;
   clearPriceLines: (symbol?: string) => void;
   addFibDrawing: (d: Omit<FibDrawing, "id">) => void;
   removeFibDrawing: (id: string) => void;
@@ -125,6 +143,10 @@ interface ChartState {
   removePriceRange: (id: string) => void;
   updatePriceRangeColor: (id: string, color: string) => void;
   clearPriceRanges: (symbol?: string) => void;
+  addTrendLine: (d: Omit<TrendLineDrawing, "id">) => void;
+  removeTrendLine: (id: string) => void;
+  updateTrendLineColor: (id: string, color: string) => void;
+  clearTrendLines: (symbol?: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
 }
@@ -157,6 +179,7 @@ export const useChartStore = create<ChartState>()(
       priceLines: [],
       fibDrawings: [],
       priceRanges: [],
+      trendLines: [],
       symbolDialogOpen: false,
       settingsTarget: null,
 
@@ -191,7 +214,7 @@ export const useChartStore = create<ChartState>()(
           watchlist: state.watchlist.filter((x) => x !== s),
         })),
       setTool: (tool) => set({ tool }),
-      addPriceLine: (price, symbol, color) =>
+      addPriceLine: (price, symbol, color, label) =>
         set((state) => ({
           priceLines: [
             ...state.priceLines,
@@ -203,6 +226,7 @@ export const useChartStore = create<ChartState>()(
               symbol,
               price,
               ...(color ? { color } : {}),
+              ...(label ? { label } : {}),
             },
           ],
         })),
@@ -259,6 +283,24 @@ export const useChartStore = create<ChartState>()(
       clearPriceRanges: (symbol) =>
         set((state) => ({
           priceRanges: symbol ? state.priceRanges.filter((r) => r.symbol !== symbol) : [],
+        })),
+      addTrendLine: (d) =>
+        set((state) => ({
+          trendLines: [...state.trendLines, {
+            ...d,
+            id: typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          }],
+        })),
+      removeTrendLine: (id) =>
+        set((state) => ({ trendLines: state.trendLines.filter((t) => t.id !== id) })),
+      updateTrendLineColor: (id, color) =>
+        set((state) => ({
+          trendLines: state.trendLines.map((t) => t.id === id ? { ...t, color } : t),
+        })),
+      clearTrendLines: (symbol) =>
+        set((state) => ({
+          trendLines: symbol ? state.trendLines.filter((t) => t.symbol !== symbol) : [],
         })),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),

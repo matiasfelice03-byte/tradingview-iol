@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Plus, X, LogOut, ChevronDown, Check } from "lucide-react";
+import { Plus, X, LogOut, ChevronDown, Check, FolderPlus } from "lucide-react";
 import { fetchTickers24h } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
 import { useChartStore } from "@/lib/store/chart-store";
@@ -13,35 +13,117 @@ import { iolAuth } from "@/lib/iol/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct, formatARS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CRYPTO_NAMES, ARGENTINA_NAMES, getCryptoLogoUrl, getSymbolColor } from "@/lib/symbolInfo";
+import { CRYPTO_NAMES, ARGENTINA_NAMES, getCryptoLogoUrl } from "@/lib/symbolInfo";
+import { SymbolAvatar } from "./SymbolAvatar";
 
 interface Row { symbol: string; price: number; pct: number; }
 
-function SymbolAvatar({ symbol, logoUrl }: { symbol: string; logoUrl?: string }) {
-  const [imgError, setImgError] = useState(false);
-  const color = getSymbolColor(symbol);
-  const initials = symbol.slice(0, 2).toUpperCase();
+function AddToListButton({ symbol, market }: { symbol: string; market: "argentina" | "crypto" }) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const { watchlists, addToWatchlist, addWatchlist } = useExplorarStore();
 
-  if (logoUrl && !imgError) {
-    return (
-      <div className="relative h-6 w-6 shrink-0">
-        <img
-          src={logoUrl}
-          alt={symbol}
-          width={24}
-          height={24}
-          className="h-6 w-6 rounded-full object-contain"
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setCreating(false);
+        setNewName("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleAdd = (listId: string) => {
+    addToWatchlist(listId, { symbol, market });
+    setOpen(false);
+  };
+
+  const handleCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    addWatchlist(name);
+    // The store assigns ids via crypto.randomUUID inside addWatchlist; read the latest list back
+    const updated = useExplorarStore.getState().watchlists;
+    const created = updated[updated.length - 1];
+    if (created) addToWatchlist(created.id, { symbol, market });
+    setOpen(false);
+    setCreating(false);
+    setNewName("");
+  };
+
   return (
-    <div
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-      style={{ backgroundColor: color }}
-    >
-      {initials}
+    <div ref={ref} className="relative">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-blue group-hover:visible"
+        title="Agregar a lista"
+      >
+        <FolderPlus className="h-3 w-3" />
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-0 top-full z-50 mt-1 w-48 rounded border border-tv-border bg-tv-panel shadow-lg overflow-hidden"
+        >
+          <div className="border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-muted">
+            Agregar {symbol} a…
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {watchlists.map((w) => {
+              const already = w.items.some((i) => i.symbol === symbol);
+              return (
+                <button
+                  key={w.id}
+                  onClick={() => !already && handleAdd(w.id)}
+                  disabled={already}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-[11px] text-tv-text hover:bg-tv-panel-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="truncate">{w.name}</span>
+                  {already && <Check className="h-3 w-3 shrink-0 text-tv-green" />}
+                </button>
+              );
+            })}
+            {watchlists.length === 0 && !creating && (
+              <p className="px-3 py-2 text-[10px] text-tv-text-muted">No tenés listas todavía</p>
+            )}
+          </div>
+          {creating ? (
+            <div className="flex items-center gap-1 border-t border-tv-border p-1.5">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                  if (e.key === "Escape") { setCreating(false); setNewName(""); }
+                }}
+                placeholder="Nombre de la lista"
+                className="flex-1 rounded bg-tv-bg border border-tv-border px-1.5 py-1 text-[11px] text-tv-text placeholder:text-tv-text-muted focus:outline-none focus:border-tv-blue"
+              />
+              <button
+                onClick={handleCreate}
+                disabled={!newName.trim()}
+                className="rounded bg-tv-blue px-2 py-1 text-[10px] font-semibold text-white disabled:opacity-40"
+              >
+                OK
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCreating(true)}
+              className="flex w-full items-center gap-1.5 border-t border-tv-border px-3 py-2 text-[11px] text-tv-blue hover:bg-tv-panel-hover"
+            >
+              <Plus className="h-3 w-3" />
+              Nueva lista
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -69,6 +151,7 @@ function ArgentinaWatchlistItem({ simbolo, isActive, onSelect, onRemove }: {
         <span className={cn("tabular-nums", quote ? quote.variacion >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
           {quote ? formatPct(quote.variacion) : "—"}
         </span>
+        <AddToListButton symbol={simbolo} market="argentina" />
         {onRemove && (
           <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
             className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
@@ -114,6 +197,7 @@ function CryptoWatchlistItem({ symbol, isActive, onSelect, onRemove }: {
         <span className={cn("tabular-nums", pct != null ? pct >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
           {pct != null ? formatPct(pct) : "—"}
         </span>
+        <AddToListButton symbol={symbol} market="crypto" />
         {onRemove && (
           <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
             className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
@@ -198,10 +282,11 @@ export function Watchlist() {
   const setMarket = useIolStore((s) => s.setMarket);
 
   const { watchlists, removeFromWatchlist: removeFromCustomList } = useExplorarStore();
+  const selectedListId = useExplorarStore((s) => s.selectedListId);
+  const setSelectedListId = useExplorarStore((s) => s.setSelectedListId);
 
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [flash, setFlash] = useState<Record<string, "up" | "down" | null>>({});
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
 
   const selectedCustomList = selectedListId ? watchlists.find((w) => w.id === selectedListId) : null;
 
@@ -338,6 +423,7 @@ export function Watchlist() {
                   <span className={cn("tabular-nums", row ? row.pct >= 0 ? "text-tv-green" : "text-tv-red" : "text-tv-text-muted")}>
                     {row ? formatPct(row.pct) : "—"}
                   </span>
+                  <AddToListButton symbol={s} market="crypto" />
                   <button onClick={(e) => { e.stopPropagation(); removeFromWatchlist(s); }}
                     className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible">
                     <X className="h-3 w-3" />

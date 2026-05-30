@@ -11,6 +11,8 @@ import {
   type ISeriesApi,
   type IPriceLine,
   type UTCTimestamp,
+  type Coordinate,
+  type Logical,
 } from "lightweight-charts";
 import { useIolStore } from "@/lib/store/iol-store";
 import { useIolHistorical } from "@/hooks/useIolHistorical";
@@ -21,12 +23,14 @@ import {
   INDICATOR_COLORS,
   useChartStore,
   type IndicatorKey,
+  type TrendLinePoint,
 } from "@/lib/store/chart-store";
 import { formatARS, formatPct } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
-import { FibonacciOverlay, computeFibLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
+import { FibonacciOverlay, computeFibLevels, computeFibExtensionLevels, RETRACEMENT_LEVELS, EXTENSION_LEVELS } from "./FibonacciOverlay";
 import { PriceRangeOverlay } from "./PriceRangeOverlay";
+import { TrendLineOverlay, distanceToPolyline, type PixelPoint } from "./TrendLineOverlay";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { AiPanel, type ChartAction } from "@/components/ai/AiPanel";
 import { AlertsPanel } from "@/components/chart/AlertsPanel";
@@ -88,11 +92,51 @@ interface MeasurePoint { time: number; price: number; }
 interface MeasureState { phase: "idle" | "placing" | "done"; a: MeasurePoint | null; b: MeasurePoint | null; }
 const INITIAL_MEASURE: MeasureState = { phase: "idle", a: null, b: null };
 
-interface FibSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
-const INITIAL_FIB: FibSketch = { phase: "idle", a: null, b: null };
+interface FibSketch { phase: "idle" | "placingB" | "placingC"; a: number | null; b: number | null; c: number | null; }
+const INITIAL_FIB: FibSketch = { phase: "idle", a: null, b: null, c: null };
 
 interface PriceRangeSketch { phase: "idle" | "placing"; a: number | null; b: number | null; }
 const INITIAL_PRICERANGE: PriceRangeSketch = { phase: "idle", a: null, b: null };
+
+interface TrendSketch { points: TrendLinePoint[]; cursor: TrendLinePoint | null; }
+const INITIAL_TREND: TrendSketch = { points: [], cursor: null };
+
+/** Convierte los puntos que manda la IA (fecha + precio, con claves flexibles) a
+ *  TrendLinePoint[]. Snapea fechas dentro del rango a la vela real más cercana
+ *  (para que rendericen exacto); las fechas futuras se dejan para proyectar. */
+function aiPointsToTrend(raw: unknown, candles: { time: number }[]): TrendLinePoint[] {
+  if (!Array.isArray(raw)) return [];
+  const toTs = (v: unknown): number => {
+    if (typeof v === "number") return v > 1e12 ? Math.floor(v / 1000) : Math.floor(v);
+    if (typeof v !== "string" || !v.trim()) return NaN;
+    let s = v.trim();
+    if (/[zZ]$|[+-]\d\d:?\d\d$/.test(s)) return Math.floor(new Date(s).getTime() / 1000);
+    s = s.replace(" ", "T");
+    if (s.length === 10) s += "T00:00:00";       // YYYY-MM-DD
+    else if (s.length === 16) s += ":00";         // YYYY-MM-DDTHH:MM
+    return Math.floor(new Date(s + "Z").getTime() / 1000);
+  };
+  const lastT = candles.length ? Number(candles[candles.length - 1].time) : 0;
+  const out: TrendLinePoint[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== "object") continue;
+    const o = p as Record<string, unknown>;
+    const price = Number(o.price ?? o.precio ?? o.value ?? o.y);
+    let time = toTs(o.date ?? o.time ?? o.fecha ?? o.x ?? o.t);
+    if (!isFinite(price) || !isFinite(time)) continue;
+    // Snapear a la vela real más cercana si la fecha cae dentro del rango de datos.
+    if (time <= lastT && candles.length >= 2) {
+      let bestT = Number(candles[0].time), bestDiff = Infinity;
+      for (const c of candles) {
+        const d = Math.abs(Number(c.time) - time);
+        if (d < bestDiff) { bestDiff = d; bestT = Number(c.time); }
+      }
+      time = bestT;
+    }
+    out.push({ time, price });
+  }
+  return out;
+}
 
 interface HoverInfo { o: number; h: number; l: number; c: number; v: number; time: number; pct: number; }
 interface LastValues { ema20?: number; ema50?: number; ema200?: number; rsi?: number; macd?: number; macdSignal?: number; macdHist?: number; volume?: number; }
@@ -109,6 +153,9 @@ export function IolPriceChart() {
   const dateRange = useIolStore((s) => s.dateRange);
   const setDateRange = useIolStore((s) => s.setDateRange);
   const iolTimeframe = useIolStore((s) => s.iolTimeframe);
+
+  const setSelectedSymbol = useIolStore((s) => s.setSelectedSymbol);
+  const setIolTimeframe = useIolStore((s) => s.setIolTimeframe);
 
   const indicators = useChartStore((s) => s.indicators);
   const hidden = useChartStore((s) => s.hidden);
@@ -131,6 +178,14 @@ export function IolPriceChart() {
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
+  const clearPriceLines = useChartStore((s) => s.clearPriceLines);
+  const clearPriceRanges = useChartStore((s) => s.clearPriceRanges);
+  const clearFibDrawings = useChartStore((s) => s.clearFibDrawings);
+  const trendLines = useChartStore((s) => s.trendLines);
+  const addTrendLine = useChartStore((s) => s.addTrendLine);
+  const removeTrendLine = useChartStore((s) => s.removeTrendLine);
+  const updateTrendLineColor = useChartStore((s) => s.updateTrendLineColor);
+  const clearTrendLines = useChartStore((s) => s.clearTrendLines);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -170,11 +225,13 @@ export function IolPriceChart() {
   addPriceRangeRef.current = addPriceRange;
   const priceRangesRef = useRef(priceRanges);
   priceRangesRef.current = priceRanges;
-  const lastClickRef = useRef<{ ts: number; y: number } | null>(null);
+  const lastClickRef = useRef<{ ts: number; x: number; y: number } | null>(null);
   const fibDrawingsRef = useRef(fibDrawings);
   fibDrawingsRef.current = fibDrawings;
   const priceLinesRef = useRef(priceLines);
   priceLinesRef.current = priceLines;
+  const trendLinesRef = useRef(trendLines);
+  trendLinesRef.current = trendLines;
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -183,9 +240,10 @@ export function IolPriceChart() {
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [fibSketch, setFibSketch] = useState<FibSketch>(INITIAL_FIB);
   const [priceRangeSketch, setPriceRangeSketch] = useState<PriceRangeSketch>(INITIAL_PRICERANGE);
+  const [trendSketch, setTrendSketch] = useState<TrendSketch>(INITIAL_TREND);
   const [renderTick, setRenderTick] = useState(0);
   const [contextMenu, setContextMenu] = useState<{
-    kind: "fib" | "hline" | "pricerange";
+    kind: "fib" | "hline" | "pricerange" | "trendline";
     id: string;
     x: number;
     y: number;
@@ -197,8 +255,10 @@ export function IolPriceChart() {
   fibSketchRef.current = fibSketch;
   const priceRangeSketchRef = useRef(priceRangeSketch);
   priceRangeSketchRef.current = priceRangeSketch;
+  const trendSketchRef = useRef(trendSketch);
+  trendSketchRef.current = trendSketch;
 
-  const { candles, loading, error } = useIolHistorical(selectedSymbol, iolTimeframe);
+  const { candles, loading, error } = useIolHistorical(selectedSymbol, iolTimeframe, dateRange);
   const { quote } = useIolQuote(selectedSymbol);
 
   function recomputePaneOffsets() {
@@ -212,6 +272,61 @@ export function IolPriceChart() {
       return o;
     });
     setPaneOffsets(offsets);
+  }
+
+  // Convierte un x (pixel) a timestamp. Si el x cae más allá de la última vela
+  // (zona vacía a la derecha), extrapola un tiempo "futuro" — así la línea de
+  // tendencia puede proyectarse para marcar una hipótesis.
+  function xToTime(x: number): number | null {
+    const ts = chartRef.current?.timeScale();
+    const cs = candlesRef.current;
+    if (!ts || cs.length < 2) return null;
+    const logical = ts.coordinateToLogical(x as Coordinate);
+    if (logical == null) return null;
+    const lastIdx = cs.length - 1;
+    const lastTime = Number(cs[lastIdx].time);
+    // Dentro del rango de datos: usar el tiempo exacto de la vela.
+    // (coordinateToTime hace "clamp" a la última vela para clics futuros, por eso
+    // solo lo usamos cuando el índice lógico cae dentro de los datos.)
+    if (Number(logical) <= lastIdx) {
+      const t = ts.coordinateToTime(x as Coordinate);
+      if (t != null) return Number(t);
+    }
+    // Más allá de la última vela: extrapolar por índice lógico.
+    const dt = (lastTime - Number(cs[0].time)) / lastIdx;
+    return Math.round(lastTime + (Number(logical) - lastIdx) * dt);
+  }
+
+  // Convierte un índice lógico (el que trae el evento del mouse) a timestamp.
+  // El índice lógico SÍ se extiende más allá de la última vela sin "clamp".
+  function logicalToTime(logical: number): number | null {
+    const cs = candlesRef.current;
+    if (cs.length < 2) return null;
+    const lastIdx = cs.length - 1;
+    const idx = Math.round(logical);
+    if (idx >= 0 && idx <= lastIdx) return Number(cs[idx].time);
+    const lastTime = Number(cs[lastIdx].time);
+    const dt = (lastTime - Number(cs[0].time)) / lastIdx;
+    return Math.round(lastTime + (logical - lastIdx) * dt);
+  }
+
+  // Convierte un timestamp a x (pixel). Si el tiempo está más allá de la última
+  // vela, extrapola la coordenada usando el espaciado lógico de barras.
+  function timeToX(time: number): number | null {
+    const ts = chartRef.current?.timeScale();
+    const cs = candlesRef.current;
+    if (!ts || cs.length < 2) return null;
+    const lastIdx = cs.length - 1;
+    const lastTime = Number(cs[lastIdx].time);
+    // Dentro del rango: coordenada exacta de la vela.
+    if (time <= lastTime) {
+      const direct = ts.timeToCoordinate(time as UTCTimestamp);
+      if (direct != null) return direct;
+    }
+    // Más allá de la última vela (o sin match exacto): extrapolar por índice lógico.
+    const dt = (lastTime - Number(cs[0].time)) / lastIdx;
+    if (dt === 0) return null;
+    return ts.logicalToCoordinate((lastIdx + (time - lastTime) / dt) as Logical);
   }
 
   // Create chart once
@@ -263,7 +378,7 @@ export function IolPriceChart() {
       const now = Date.now();
       const prev = lastClickRef.current;
       const isDoubleClick = prev !== null && (now - prev.ts < 400) && Math.abs(clickY - prev.y) < 20;
-      lastClickRef.current = { ts: now, y: clickY };
+      lastClickRef.current = { ts: now, x: clickX, y: clickY };
 
       if (currentTool === "cursor") {
         if (!isDoubleClick) { setContextMenu(null); setSelectedDrawingId(null); return; }
@@ -303,6 +418,22 @@ export function IolPriceChart() {
             }
           }
         }
+        const tsApiSel = chartRef.current?.timeScale();
+        if (tsApiSel) {
+          for (const t of trendLinesRef.current.filter((t) => t.symbol === sym)) {
+            const px: PixelPoint[] = [];
+            for (const pt of t.points) {
+              const x = timeToX(pt.time);
+              const y = series.priceToCoordinate(pt.price);
+              if (x !== null && y !== null) px.push({ x, y });
+            }
+            if (px.length >= 2 && distanceToPolyline(clickX, clickY, px) < 8) {
+              setSelectedDrawingId(t.id);
+              setContextMenu({ kind: "trendline", id: t.id, x: clickX, y: clickY });
+              return;
+            }
+          }
+        }
         setSelectedDrawingId(null);
         setContextMenu(null);
         return;
@@ -328,15 +459,29 @@ export function IolPriceChart() {
       if (currentTool === "fibonacci" || currentTool === "fibext") {
         const sketch = fibSketchRef.current;
         if (sketch.phase === "idle") {
-          setFibSketch({ phase: "placing", a: price, b: price });
-        } else {
-          const high = Math.max(sketch.a!, price);
-          const low = Math.min(sketch.a!, price);
+          setFibSketch({ phase: "placingB", a: price, b: price, c: null });
+        } else if (sketch.phase === "placingB") {
+          if (currentTool === "fibext") {
+            // Extensión: falta el 3er punto (fin del retroceso).
+            setFibSketch({ phase: "placingC", a: sketch.a, b: price, c: price });
+          } else {
+            addFibDrawingRef.current({
+              symbol: selectedSymbolRef.current,
+              type: "retracement",
+              highPrice: Math.max(sketch.a!, price),
+              lowPrice: Math.min(sketch.a!, price),
+            });
+            setFibSketch(INITIAL_FIB);
+            setToolRef.current("cursor");
+          }
+        } else if (sketch.phase === "placingC") {
+          const a = sketch.a!, b = sketch.b!;
           addFibDrawingRef.current({
             symbol: selectedSymbolRef.current,
-            type: currentTool === "fibext" ? "extension" : "retracement",
-            highPrice: high,
-            lowPrice: low,
+            type: "extension",
+            pointA: a, pointB: b, pointC: price,
+            highPrice: Math.max(a, b),
+            lowPrice: Math.min(a, b),
           });
           setFibSketch(INITIAL_FIB);
           setToolRef.current("cursor");
@@ -354,6 +499,14 @@ export function IolPriceChart() {
           setPriceRangeSketch(INITIAL_PRICERANGE);
           setToolRef.current("cursor");
         }
+        return;
+      }
+      if (currentTool === "trendline") {
+        // param.logical no hace "clamp" en la zona futura (param.time sí).
+        const time = param.logical != null ? logicalToTime(Number(param.logical)) : xToTime(clickX);
+        if (time == null) return;
+        setTrendSketch((prev) => ({ ...prev, points: [...prev.points, { time, price }] }));
+        return;
       }
     });
 
@@ -376,11 +529,27 @@ export function IolPriceChart() {
           if (toolRef.current === "measure" && measureRef.current.phase === "placing") {
             setMeasure((prev) => prev.phase === "placing" ? { ...prev, b: { time: Number(param.time), price } } : prev);
           }
-          if ((toolRef.current === "fibonacci" || toolRef.current === "fibext") && fibSketchRef.current.phase === "placing") {
-            setFibSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
+          if (toolRef.current === "fibonacci" || toolRef.current === "fibext") {
+            const ph = fibSketchRef.current.phase;
+            if (ph === "placingB") setFibSketch((prev) => prev.phase === "placingB" ? { ...prev, b: price } : prev);
+            else if (ph === "placingC") setFibSketch((prev) => prev.phase === "placingC" ? { ...prev, c: price } : prev);
           }
           if (toolRef.current === "pricerange" && priceRangeSketchRef.current.phase === "placing") {
             setPriceRangeSketch((prev) => prev.phase === "placing" ? { ...prev, b: price } : prev);
+          }
+        }
+      }
+      // Preview de la línea de tendencia — funciona en cualquier x, dentro o más
+      // allá de la última vela. Siempre vía xToTime (param.time hace clamp).
+      if (param.point && candleSeriesRef.current
+          && toolRef.current === "trendline" && trendSketchRef.current.points.length > 0) {
+        const rawP = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (rawP !== null && isFinite(rawP)) {
+          const t = param.logical != null ? logicalToTime(Number(param.logical)) : xToTime(param.point.x);
+          if (t != null) {
+            setTrendSketch((prev) => prev.points.length > 0
+              ? { ...prev, cursor: { time: t, price: Number(rawP) } }
+              : prev);
           }
         }
       }
@@ -443,6 +612,7 @@ export function IolPriceChart() {
     updateRSI();
     updateMACD();
     chartRef.current?.timeScale().fitContent();
+    chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
     dataLoadedRef.current = true;
     requestAnimationFrame(() => recomputePaneOffsets());
     const last = valid[valid.length - 1];
@@ -455,6 +625,15 @@ export function IolPriceChart() {
   useEffect(() => {
     dataLoadedRef.current = false;
     candlesRef.current = [];
+    try { candleSeriesRef.current?.setData([]); } catch {}
+    try { volumeSeriesRef.current?.setData([]); } catch {}
+    try { ema20Ref.current?.setData([]); } catch {}
+    try { ema50Ref.current?.setData([]); } catch {}
+    try { ema200Ref.current?.setData([]); } catch {}
+    try { rsiRef.current?.setData([]); } catch {}
+    try { macdRef.current?.setData([]); } catch {}
+    try { macdSignalRef.current?.setData([]); } catch {}
+    try { macdHistRef.current?.setData([]); } catch {}
   }, [selectedSymbol]);
 
   // Update last candle with live quote
@@ -565,10 +744,9 @@ export function IolPriceChart() {
     }
     for (const pl of linesForSymbol) {
       if (map.has(pl.id)) {
-        // Update color if changed
-        try { map.get(pl.id)!.applyOptions({ color: pl.color ?? TV_COLORS.blue }); } catch {}
+        try { map.get(pl.id)!.applyOptions({ color: pl.color ?? TV_COLORS.blue, title: pl.label ?? "" }); } catch {}
       } else {
-        const apiLine = series.createPriceLine({ price: pl.price, color: pl.color ?? TV_COLORS.blue, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+        const apiLine = series.createPriceLine({ price: pl.price, color: pl.color ?? TV_COLORS.blue, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: pl.label ?? "" });
         map.set(pl.id, apiLine);
       }
     }
@@ -577,11 +755,12 @@ export function IolPriceChart() {
   // Cursor + reset on tool change
   useEffect(() => {
     if (containerRef.current) {
-      containerRef.current.style.cursor = ["hline", "measure", "fibonacci", "fibext", "pricerange"].includes(tool) ? "crosshair" : "";
+      containerRef.current.style.cursor = ["hline", "measure", "fibonacci", "fibext", "pricerange", "trendline"].includes(tool) ? "crosshair" : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
     if (tool !== "fibonacci" && tool !== "fibext") setFibSketch(INITIAL_FIB);
     if (tool !== "pricerange") setPriceRangeSketch(INITIAL_PRICERANGE);
+    if (tool !== "trendline") setTrendSketch(INITIAL_TREND);
     if (tool !== "cursor") { setContextMenu(null); setSelectedDrawingId(null); }
   }, [tool]);
 
@@ -674,11 +853,16 @@ export function IolPriceChart() {
   const priceToCoord = (price: number) => candleSeriesRef.current?.priceToCoordinate(price) ?? null;
 
   // In-progress sketch
-  if (fibSketch.phase === "placing" && fibSketch.a !== null && fibSketch.b !== null) {
-    const high = Math.max(fibSketch.a, fibSketch.b);
-    const low = Math.min(fibSketch.a, fibSketch.b);
-    const type = tool === "fibext" ? "extension" : "retracement";
-    const levels = computeFibLevels(high, low, type, priceToCoord);
+  if (fibSketch.phase === "placingB" && fibSketch.a !== null && fibSketch.b !== null) {
+    const levels = computeFibLevels(
+      Math.max(fibSketch.a, fibSketch.b), Math.min(fibSketch.a, fibSketch.b),
+      "retracement", priceToCoord,
+    );
+    fibOverlays.push(
+      <FibonacciOverlay key="sketch" levels={levels} chartWidth={containerWidth} isPreview formatPrice={formatARS} />
+    );
+  } else if (fibSketch.phase === "placingC" && fibSketch.a !== null && fibSketch.b !== null && fibSketch.c !== null) {
+    const levels = computeFibExtensionLevels(fibSketch.a, fibSketch.b, fibSketch.c, priceToCoord);
     fibOverlays.push(
       <FibonacciOverlay key="sketch" levels={levels} chartWidth={containerWidth} isPreview formatPrice={formatARS} />
     );
@@ -686,7 +870,9 @@ export function IolPriceChart() {
 
   // Completed drawings
   for (const d of fibDrawings.filter((d) => d.symbol === selectedSymbol)) {
-    const levels = computeFibLevels(d.highPrice, d.lowPrice, d.type, priceToCoord, d.color);
+    const levels = d.type === "extension" && d.pointA != null && d.pointB != null && d.pointC != null
+      ? computeFibExtensionLevels(d.pointA, d.pointB, d.pointC, priceToCoord, d.color)
+      : computeFibLevels(d.highPrice, d.lowPrice, d.type, priceToCoord, d.color);
     fibOverlays.push(
       <FibonacciOverlay
         key={d.id}
@@ -711,11 +897,53 @@ export function IolPriceChart() {
     );
   }
 
+  // Trend line overlays
+  const trendOverlays: React.ReactNode[] = [];
+  {
+    const tsApi = chartRef.current?.timeScale();
+    const series = candleSeriesRef.current;
+    const toPixel = (pt: TrendLinePoint): PixelPoint | null => {
+      if (!tsApi || !series) return null;
+      const x = timeToX(pt.time);
+      const y = series.priceToCoordinate(pt.price);
+      return x !== null && y !== null ? { x, y } : null;
+    };
+    for (const t of trendLines.filter((t) => t.symbol === selectedSymbol)) {
+      const px = t.points.map(toPixel).filter((p): p is PixelPoint => p !== null);
+      if (px.length >= 2) {
+        trendOverlays.push(
+          <TrendLineOverlay key={t.id} points={px} color={t.color} isSelected={selectedDrawingId === t.id} extendRight chartWidth={containerWidth} />
+        );
+      }
+    }
+    if (trendSketch.points.length > 0) {
+      const sketchPts = [...trendSketch.points, ...(trendSketch.cursor ? [trendSketch.cursor] : [])];
+      const px = sketchPts.map(toPixel).filter((p): p is PixelPoint => p !== null);
+      if (px.length >= 1) {
+        trendOverlays.push(
+          <TrendLineOverlay key="trend-sketch" points={px} isPreview extendRight chartWidth={containerWidth} />
+        );
+      }
+    }
+  }
+
+  const finishTrendLine = () => {
+    if (trendSketch.points.length >= 2) {
+      addTrendLine({ symbol: selectedSymbol, points: trendSketch.points });
+    }
+    setTrendSketch(INITIAL_TREND);
+    setTool("cursor");
+  };
+  const cancelTrendLine = () => {
+    setTrendSketch(INITIAL_TREND);
+    setTool("cursor");
+  };
+
   void renderTick;
 
   const activeIndicators = (Object.keys(indicators) as (keyof typeof indicators)[]).filter((k) => indicators[k]);
-  const recentCandles = candlesRef.current.slice(-10).map((c) =>
-    `${new Date((c.time as number) * 1000).toISOString().slice(0, 10)}: O=${formatARS(c.open)} H=${formatARS(c.high)} L=${formatARS(c.low)} C=${formatARS(c.close)}`
+  const recentCandles = candlesRef.current.slice(-100).map((c) =>
+    `${new Date((c.time as number) * 1000).toISOString().slice(0, 16).replace("T", " ")}: O=${formatARS(c.open)} H=${formatARS(c.high)} L=${formatARS(c.low)} C=${formatARS(c.close)}`
   ).join("\n");
 
   return (
@@ -727,6 +955,28 @@ export function IolPriceChart() {
       {measureRender}
       {fibOverlays}
       {priceRangeOverlays}
+      {trendOverlays}
+
+      {tool === "trendline" && (
+        <div className="pointer-events-auto absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-tv-border bg-tv-panel px-3 py-1.5 shadow-lg">
+          <span className="text-[11px] text-tv-text-muted">
+            Línea de tendencia · {trendSketch.points.length} punto{trendSketch.points.length === 1 ? "" : "s"}
+          </span>
+          <button
+            onClick={finishTrendLine}
+            disabled={trendSketch.points.length < 2}
+            className="rounded bg-tv-blue px-2 py-0.5 text-[11px] font-semibold text-white transition-colors hover:bg-tv-blue/80 disabled:opacity-40"
+          >
+            Finalizar
+          </button>
+          <button
+            onClick={cancelTrendLine}
+            className="rounded px-1.5 py-0.5 text-[11px] text-tv-text-muted hover:text-tv-red"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
 
       {contextMenu && contextMenu.kind === "fib" && (() => {
         const d = fibDrawings.find((x) => x.id === contextMenu.id);
@@ -766,6 +1016,12 @@ export function IolPriceChart() {
         const r = priceRanges.find((x) => x.id === contextMenu.id);
         if (!r) return null;
         return <DrawingContextMenu kind="pricerange" x={contextMenu.x} y={contextMenu.y} color={r.color} onColorChange={(c) => updatePriceRangeColor(r.id, c)} onDelete={() => removePriceRange(r.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
+      })()}
+
+      {contextMenu && contextMenu.kind === "trendline" && (() => {
+        const t = trendLines.find((x) => x.id === contextMenu.id);
+        if (!t) return null;
+        return <DrawingContextMenu kind="trendline" x={contextMenu.x} y={contextMenu.y} color={t.color} onColorChange={(c) => updateTrendLineColor(t.id, c)} onDelete={() => removeTrendLine(t.id)} onClose={() => { setContextMenu(null); setSelectedDrawingId(null); }} />;
       })()}
 
       {error && !loading && candles.length === 0 && (
@@ -851,13 +1107,76 @@ export function IolPriceChart() {
         }}
         onAction={(action: ChartAction) => {
           if (action.type === "add_hline") {
-            addPriceLine(action.price, selectedSymbol, action.color);
+            addPriceLine(action.price, selectedSymbol, action.color, action.label);
           } else if (action.type === "add_price_range") {
             addPriceRange({ symbol: selectedSymbol, highPrice: action.high, lowPrice: action.low, color: action.color });
+          } else if (action.type === "add_fibonacci") {
+            const a = Number(action.pointA), b = Number(action.pointB), c = Number(action.pointC);
+            if (action.kind === "extension" && [a, b, c].every(isFinite)) {
+              addFibDrawing({
+                symbol: selectedSymbol, type: "extension",
+                pointA: a, pointB: b, pointC: c,
+                highPrice: Math.max(a, b), lowPrice: Math.min(a, b),
+                color: action.color,
+              });
+            } else {
+              const high = Math.max(Number(action.high), Number(action.low));
+              const low = Math.min(Number(action.high), Number(action.low));
+              if (isFinite(high) && isFinite(low)) {
+                addFibDrawing({ symbol: selectedSymbol, type: action.kind ?? "retracement", highPrice: high, lowPrice: low, color: action.color });
+              }
+            }
+          } else if (action.type === "add_trendline") {
+            const points = aiPointsToTrend(action.points, candlesRef.current);
+            if (points.length >= 2) addTrendLine({ symbol: selectedSymbol, points, color: action.color });
+          } else if (action.type === "project_path") {
+            const cs = candlesRef.current;
+            const wps = Array.isArray(action.points) ? action.points : [];
+            if (cs.length >= 2 && wps.length >= 1) {
+              const lastIdx = cs.length - 1;
+              const lastTime = Number(cs[lastIdx].time);
+              const avg = (lastTime - Number(cs[0].time)) / lastIdx;
+              const pts: TrendLinePoint[] = [{ time: lastTime, price: cs[lastIdx].close }];
+              let maxBars = 0;
+              for (const wp of wps) {
+                const price = Number(wp.price);
+                const weeks = Math.min(Math.max(Number(wp.weeks) || 1, 0.25), 16);
+                const barsAhead = Math.max(1, Math.round(weeks * 5));
+                if (!isFinite(price) || price <= 0) continue;
+                pts.push({ time: Math.round(lastTime + barsAhead * avg), price });
+                maxBars = Math.max(maxBars, barsAhead);
+              }
+              if (pts.length >= 2) {
+                pts.sort((a, b) => a.time - b.time);
+                addTrendLine({ symbol: selectedSymbol, points: pts, color: action.color });
+                // Ampliar margen derecho y encuadrar para que el recorrido se vea entero.
+                const ts = chartRef.current?.timeScale();
+                if (ts) {
+                  try {
+                    ts.applyOptions({ rightOffset: maxBars + 12 });
+                    ts.setVisibleLogicalRange({
+                      from: Math.max(0, lastIdx - 70),
+                      to: lastIdx + maxBars + 8,
+                    });
+                  } catch { /* chart no listo */ }
+                }
+              }
+            }
           } else if (action.type === "enable_indicator") {
             if (!indicators[action.name]) toggleIndicator(action.name);
           } else if (action.type === "disable_indicator") {
             if (indicators[action.name]) toggleIndicator(action.name);
+          } else if (action.type === "clear_drawings") {
+            const kind = action.kind ?? "all";
+            if (kind === "hlines" || kind === "all") clearPriceLines(selectedSymbol);
+            if (kind === "ranges" || kind === "all") clearPriceRanges(selectedSymbol);
+            if (kind === "fibs" || kind === "all") clearFibDrawings(selectedSymbol);
+            if (kind === "trends" || kind === "all") clearTrendLines(selectedSymbol);
+          } else if (action.type === "set_symbol") {
+            setSelectedSymbol(action.symbol.toUpperCase());
+          } else if (action.type === "set_timeframe") {
+            const tf = action.timeframe.toUpperCase();
+            if (["1H", "4H", "1D", "1S", "1M"].includes(tf)) setIolTimeframe(tf as "1H" | "4H" | "1D" | "1S" | "1M");
           }
         }}
       />

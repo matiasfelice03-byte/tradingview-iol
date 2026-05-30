@@ -12,11 +12,10 @@ export function MarketSwitcher() {
   const [showLogin, setShowLogin] = useState(false);
 
   const handleArgentina = () => {
+    setMarket("argentina");
     if (!isLoggedIn) {
       setShowLogin(true);
-      return;
     }
-    setMarket("argentina");
   };
 
   return (

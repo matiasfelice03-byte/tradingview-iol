@@ -51,7 +51,7 @@ export default function HomePage() {
       <Header />
 
       {/* Content area — single unified layout, no chart duplication */}
-      <div className="relative flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Left sidebar: desktop only */}
         {isCrypto && <div className="hidden md:block"><LeftSidebar /></div>}
         {isArgentina && <div className="hidden md:block"><IolLeftSidebar /></div>}
@@ -108,7 +108,7 @@ export default function HomePage() {
         </main>
 
         {/* Watchlist: desktop fixed sidebar */}
-        <aside className="hidden md:flex w-64 flex-col border-l border-tv-border bg-tv-panel">
+        <aside className="hidden md:flex w-64 min-h-0 flex-col overflow-hidden border-l border-tv-border bg-tv-panel">
           <Watchlist />
         </aside>
 
@@ -124,7 +124,7 @@ export default function HomePage() {
       {isCrypto && <div className="hidden md:block"><BottomPanel /></div>}
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden flex h-14 shrink-0 items-stretch border-t border-tv-border bg-tv-panel">
+      <nav className="md:hidden flex shrink-0 items-stretch border-t border-tv-border bg-tv-panel [padding-bottom:env(safe-area-inset-bottom)] h-14">
         <MobileNavBtn
           icon={BarChart2}
           label="Chart"

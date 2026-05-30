@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import { fetchYahooCandles, type IolTimeframe } from "@/lib/yahoo/rest";
-import { fetchIolHistorical, type IolCandle, type IolDateRange } from "@/lib/iol/rest";
+import { fetchIolHistorical, normalizeIolSymbol, type IolCandle, type IolDateRange } from "@/lib/iol/rest";
 
-const TF_TO_IOL_RANGE: Partial<Record<IolTimeframe, IolDateRange>> = {
-  "1D": "1A",
-  "1S": "1A",
-  "1M": "1A",
-};
+const IOL_TIMEFRAMES: IolTimeframe[] = ["1D", "1S", "1M"];
+// La serie histórica de IOL se queda corta en rangos largos (devuelve ~1 año).
+// Para estos rangos usamos Yahoo Finance, que sí tiene historial completo.
+const YAHOO_ONLY_RANGES: IolDateRange[] = ["1A", "5A"];
 
 export function useIolHistorical(
   simbolo: string | null,
   timeframe: IolTimeframe = "1D",
+  dateRange: IolDateRange = "1A",
 ): {
   candles: IolCandle[];
   error: string | null;
@@ -26,10 +26,13 @@ export function useIolHistorical(
     setLoading(true);
     setError(null);
 
-    const iolRange = TF_TO_IOL_RANGE[timeframe];
-    const load = iolRange
-      ? fetchIolHistorical(simbolo, iolRange).catch(() => fetchYahooCandles(simbolo + ".BA", timeframe))
-      : fetchYahooCandles(simbolo + ".BA", timeframe);
+    const usesIol = IOL_TIMEFRAMES.includes(timeframe) && !YAHOO_ONLY_RANGES.includes(dateRange);
+    const yahooFallback = () => fetchYahooCandles(normalizeIolSymbol(simbolo) + ".BA", timeframe, dateRange);
+    const load = usesIol
+      ? fetchIolHistorical(simbolo, dateRange)
+          .then((data) => (data.length > 0 ? data : yahooFallback()))
+          .catch(yahooFallback)
+      : yahooFallback();
 
     load
       .then((data) => {
@@ -48,7 +51,7 @@ export function useIolHistorical(
     return () => {
       cancelled = true;
     };
-  }, [simbolo, timeframe]);
+  }, [simbolo, timeframe, dateRange]);
 
   return { candles, error, loading };
 }

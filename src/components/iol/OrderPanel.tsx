@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useIolStore } from "@/lib/store/iol-store";
 import { useIolQuote } from "@/hooks/useIolQuote";
@@ -32,19 +32,27 @@ export function OrderPanel() {
   const [cantidad, setCantidad] = useState("");
   const [precio, setPrecio] = useState("");
   const [tipoOrden, setTipoOrden] = useState<IolTipoOrden>("precioLimite");
-  const [plazo, setPlazo] = useState<IolPlazo>("t2");
+  const [plazo, setPlazo] = useState<IolPlazo>("t0");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmSide, setConfirmSide] = useState<"comprar" | "vender">("comprar");
   const [loading, setLoading] = useState(false);
   const [resultMsg, setResultMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const priceEditedRef = useRef(false);
 
-  // Pre-fill price from live quote
+  // Reset price when symbol changes
   useEffect(() => {
-    if (quote && !precio) {
+    priceEditedRef.current = false;
+    setPrecio("");
+  }, [selectedSymbol]);
+
+  // Pre-fill price from live quote; auto-refresh unless user manually edited it.
+  // Solo si el precio es válido (> 0) — algunos CEDEARs sin operar devuelven 0.
+  useEffect(() => {
+    if (quote && quote.ultimoPrecio > 0 && !priceEditedRef.current) {
       setPrecio(quote.ultimoPrecio.toFixed(2));
     }
-  }, [quote, precio]);
+  }, [quote]);
 
   const total =
     parseFloat(cantidad || "0") * parseFloat(precio || "0");
@@ -57,25 +65,52 @@ export function OrderPanel() {
   };
 
   const executeOrder = async () => {
+    const cantidadNum = parseInt(cantidad);
+    const precioNum = parseFloat(precio);
+    if (!(cantidadNum > 0)) {
+      setResultMsg({ ok: false, text: "Cantidad inválida." });
+      return;
+    }
+    if (!(precioNum > 0)) {
+      setResultMsg({
+        ok: false,
+        text: "Precio no disponible para este activo. Ingresá un precio manualmente en el campo Precio.",
+      });
+      return;
+    }
     setLoading(true);
     setResultMsg(null);
-    const order = {
-      mercado: "bCBA" as IolMercado,
-      simbolo: selectedSymbol,
-      cantidad: parseInt(cantidad),
-      precio: parseFloat(precio),
-      plazo,
-      tipoOrden,
-    };
+    const order =
+      tipoOrden === "precioMercado"
+        ? {
+            mercado: "bCBA" as IolMercado,
+            simbolo: selectedSymbol,
+            cantidad: cantidadNum,
+            monto: Math.round(cantidadNum * precioNum),
+            plazo,
+            tipoOrden,
+          }
+        : {
+            mercado: "bCBA" as IolMercado,
+            simbolo: selectedSymbol,
+            cantidad: cantidadNum,
+            precio: precioNum,
+            plazo,
+            tipoOrden,
+          };
 
     try {
-      if (confirmSide === "comprar") {
-        await placeIolBuyOrder(order);
-      } else {
-        await placeIolSellOrder(order);
-      }
-      setResultMsg({ ok: true, text: `Orden de ${confirmSide} enviada a IOL.` });
-      setCantidad("");
+      const result =
+        confirmSide === "comprar"
+          ? await placeIolBuyOrder(order)
+          : await placeIolSellOrder(order);
+      const num = result.numeroOperacion;
+      setResultMsg({
+        ok: true,
+        text: num
+          ? `Orden de ${confirmSide} confirmada por IOL (N° ${num}).`
+          : `Orden de ${confirmSide} enviada a IOL.`,
+      });
     } catch (e) {
       setResultMsg({ ok: false, text: (e as Error).message });
     } finally {
@@ -90,23 +125,23 @@ export function OrderPanel() {
       <div className="border-t border-tv-border bg-tv-panel">
         <button
           onClick={() => setIsExpanded((v) => !v)}
-          className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-tv-panel-hover transition-colors"
+          className="flex w-full items-center justify-between gap-2 px-3 sm:px-4 py-2.5 hover:bg-tv-panel-hover transition-colors"
         >
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-tv-text">{selectedSymbol}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-semibold text-tv-text">{selectedSymbol}</span>
             {quote && (
               <>
-                <span className="text-sm tabular-nums text-tv-text">
+                <span className="shrink-0 text-sm tabular-nums text-tv-text">
                   {fmtARS(quote.ultimoPrecio)}
                 </span>
-                <span className={`text-xs tabular-nums ${quote.variacion >= 0 ? "text-tv-green" : "text-tv-red"}`}>
+                <span className={`shrink-0 text-xs tabular-nums ${quote.variacion >= 0 ? "text-tv-green" : "text-tv-red"}`}>
                   {formatPct(quote.variacion)}
                 </span>
               </>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-tv-text-muted">Operar en BYMA</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden sm:inline text-xs text-tv-text-muted">Operar en BYMA</span>
             {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-tv-text-muted" /> : <ChevronUp className="h-3.5 w-3.5 text-tv-text-muted" />}
           </div>
         </button>
@@ -149,7 +184,7 @@ export function OrderPanel() {
                     min="0"
                     step="0.01"
                     value={precio}
-                    onChange={(e) => setPrecio(e.target.value)}
+                    onChange={(e) => { priceEditedRef.current = true; setPrecio(e.target.value); }}
                     placeholder="0.00"
                     disabled={tipoOrden === "precioMercado"}
                     className="h-8 bg-tv-bg border-tv-border text-tv-text text-sm disabled:opacity-50"
@@ -199,7 +234,7 @@ export function OrderPanel() {
                 </div>
                 <Button
                   onClick={() => openConfirm(side as "comprar" | "vender")}
-                  disabled={!cantidad || (!precio && tipoOrden !== "precioMercado")}
+                  disabled={!(parseInt(cantidad) > 0) || !(parseFloat(precio) > 0)}
                   className={
                     side === "comprar"
                       ? "bg-tv-green/90 hover:bg-tv-green text-white h-8 text-xs px-4"
@@ -215,7 +250,13 @@ export function OrderPanel() {
         </div>}
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog open={confirmOpen} onOpenChange={(open) => {
+        setConfirmOpen(open);
+        if (!open && resultMsg?.ok) {
+          setCantidad("");
+          setResultMsg(null);
+        }
+      }}>
         <DialogContent className="bg-tv-panel border-tv-border text-tv-text sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-tv-text capitalize">
@@ -271,7 +312,11 @@ export function OrderPanel() {
 
           {resultMsg && (
             <Button
-              onClick={() => setConfirmOpen(false)}
+              onClick={() => {
+                setConfirmOpen(false);
+                if (resultMsg.ok) setCantidad("");
+                setResultMsg(null);
+              }}
               variant="outline"
               className="border-tv-border text-tv-text-muted hover:text-tv-text"
             >

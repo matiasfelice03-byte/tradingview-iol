@@ -1,5 +1,5 @@
 import type { UTCTimestamp } from "lightweight-charts";
-import type { IolCandle } from "@/lib/iol/rest";
+import type { IolCandle, IolDateRange } from "@/lib/iol/rest";
 
 export type IolTimeframe = "1H" | "4H" | "1D" | "1S" | "1M";
 
@@ -9,6 +9,14 @@ const TF_MAP: Record<Exclude<IolTimeframe, "4H">, { interval: string; range: str
   "1D": { interval: "1d",  range: "1y"  },
   "1S": { interval: "1wk", range: "5y"  },
   "1M": { interval: "1mo", range: "max" },
+};
+
+const DATE_RANGE_TO_YAHOO: Record<IolDateRange, string> = {
+  "1M": "30d",
+  "3M": "90d",
+  "6M": "180d",
+  "1A": "1y",
+  "5A": "5y",
 };
 
 function aggregate4h(candles: IolCandle[]): IolCandle[] {
@@ -70,12 +78,18 @@ async function fetchRaw(symbol: string, interval: string, range: string): Promis
 export async function fetchYahooCandles(
   symbol: string,
   timeframe: IolTimeframe = "1D",
+  dateRange?: IolDateRange,
 ): Promise<IolCandle[]> {
   if (timeframe === "4H") {
-    // Fetch 1h data for 120 days and aggregate into 4h blocks
+    // Fetch 1h data for 120 days and aggregate into 4h blocks (intraday can't go further anyway)
     const raw = await fetchRaw(symbol, "60m", "120d");
     return aggregate4h(raw);
   }
+  if (timeframe === "1H") {
+    // Yahoo hourly is capped at ~60 days regardless of range
+    return fetchRaw(symbol, "60m", "60d");
+  }
   const { interval, range } = TF_MAP[timeframe];
-  return fetchRaw(symbol, interval, range);
+  const resolvedRange = dateRange ? DATE_RANGE_TO_YAHOO[dateRange] : range;
+  return fetchRaw(symbol, interval, resolvedRange);
 }
